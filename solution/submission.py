@@ -1,7 +1,25 @@
+"""Sample submission: the starting point participants copy and improve.
+
+A submission is a benchopt solver: a ``submission.py`` defining
+``class Solver(CompetSolver)`` with a ``get_model`` method (and optionally
+``fit``). See ``benchmark/benchmark_utils/base_solver.py`` for the contract.
+
+Run it locally exactly as the platform does::
+
+    benchopt run benchmark -d Simulated -s solution/submission.py
+    # real data
+    benchopt prepare benchmark -d Real
+    benchopt run benchmark -d Real -s solution/submission.py
+"""
+
 from sklearn.ensemble import RandomForestClassifier
 
+from benchmark_utils.base_solver import CompetSolver
 
-# The submission here should simply be a function that returns a model
-# compatible with scikit-learn API
-def get_model():
-    return RandomForestClassifier()
+
+class Solver(CompetSolver):
+
+    name = "submission"
+
+    def get_model(self, meta):
+        return RandomForestClassifier(random_state=0)

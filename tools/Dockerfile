@@ -1,20 +1,45 @@
-# Step 1: Start from an official Docker image with desired base environment
-# Good starting points are the official codalab images or
-# pytorch images with CUDA support:
-#    - Codalab: codalab/codalab-legacy:py39
-#    - Codalab GPU: codalab/codalab-legacy:gpu310
-#    - Pytorch: pytorch/pytorch:2.8.0-cuda12.6-cudnn9-runtime
-FROM codalab/codalab-legacy:py39
+# One image for the competition: it carries the environment, the two programs
+# and the benchopt benchmark (/compet/benchmark). The phase bundle mounted on
+# /app/input_data only carries the run config. Build from the repo root:
+#
+#     docker build -f tools/Dockerfile -t <dockerhub-user>/<competition>:v1 .
+#
+# The same image serves the Codabench workers and the participants:
+#
+#     # stage the data into a host folder (bind-mounted read-only as
+#     # /app/data for the evaluation runs)
+#     docker run -v <host-data>:/app/data \
+#         <image> benchopt prepare /compet/benchmark -d Real
+#
+#     # reproduce the platform evaluation on a submission folder
+#     docker run -v <host-data>:/app/data \
+#         -v <phase>/input_data:/app/input_data \
+#         -v <submission>:/app/ingested_program -v <results>:/app/output \
+#         <image> python3 /compet/ingestion_program/ingestion.py
+#
+# For GPU submissions, install torch from the PyTorch wheel index before
+# requirements.txt, e.g. `pip install torch --index-url
+# https://download.pytorch.org/whl/cu126` (the wheels bundle the CUDA
+# runtime, so no CUDA base image is needed).
+FROM python:3.12-slim
 
-# Set environment variables to prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Step 2: Install system-level dependencies (if any)
-# e.g., git, wget, or common libraries for OpenCV like libgl1
-RUN pip install -U pip
-
-# Step 3: Copy and pre-install all Python dependencies
-# This 'requirements.txt' file should list pandas, scikit-learn, timm, etc.
-# Place it in the same directory as this Dockerfile.
+# All Python dependencies a submission may import: nothing is installed at
+# submission time.
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+RUN pip install -U pip && pip install --no-cache-dir -r /tmp/requirements.txt
+
+# The programs + the benchopt benchmark they run (baked in, so the phase
+# bundle only carries config; an image tag pins the exact evaluation).
+COPY ingestion_program /compet/ingestion_program
+COPY scoring_program /compet/scoring_program
+COPY benchmark /compet/benchmark
+
+# Data is bind-mounted read-only at /app/data by the compute worker; the
+# phase config lands on /app/input_data.
+ENV BENCHOPT_DATA_HOME=/app/data
+VOLUME /app/data
+
+# Fail the build if the stack is incoherent.
+RUN python -c "import benchopt, pandas, sklearn"

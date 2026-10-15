@@ -1,60 +1,79 @@
 version: 2
-title: Templat competition - Dummy classification
-description: Dummy classification task
+title: "Template competition: dummy classification"
+description: >
+  Template for a benchopt-powered Codabench competition: a binary
+  classification task scored by accuracy. Submissions are code (a benchopt
+  solver) that trains on the platform. The public leaderboard column scores
+  a public test set; the final ranking uses a hidden private test set.
 image: logo.png
-registration_auto_approve: False  # if True, do not require approval from admin to join the comp
+registration_auto_approve: False
+
+# The image submissions run in: built from tools/Dockerfile, it carries the
+# requirements.txt stack and the benchmark (/compet/benchmark).
+docker_image: <dockerhub-user>/<competition>:v1
+
+# Only the leaderboard metrics are exposed.
+enable_detailed_results: False
+show_detailed_results_in_submission_panel: False
+show_detailed_results_in_leaderboard: False
 
 terms: pages/terms.md
 pages:
   - title: Participation
     file: pages/participate.md
-  - title: Seed
-    file: pages/seed.md
   - title: Timeline
     file: pages/timeline.md
 
 tasks:
   - index: 0
-    name: Developement Task
-    description: 'Tune models with training data, test against examples contained in public test data'
-    input_data: dev_phase/input_data/
-    reference_data: dev_phase/reference_data/
+    name: Classification
+    description: >
+      The ingestion program runs the benchopt benchmark on your submission
+      (training on the platform); scoring parses the results.
+    input_data: main_phase/input_data/
+    reference_data: main_phase/reference_data/
     ingestion_program: ingestion_program/
     scoring_program: scoring_program/
 
 solutions:
   - index: 0
     tasks:
-    - 0
+      - 0
     path: solution/
 
-
+# Dates are UTC+0, in the documented YYYY-MM-DD HH:MM:SS format.
 phases:
-  - name: Development Phase
-    description: 'Development phase: tune your models.'
-    start: 10-07-2025
-    end: 03-31-2026
+  - index: 0
+    name: Competition
+    description: >
+      Build, train and submit your model. The public column scores the public
+      test set; the final ranking uses the hidden private test set.
+    start: 2026-11-02 00:00:00
+    end: 2027-01-31 23:59:59
+    execution_time_limit: 600
+    max_submissions_per_day: 5
+    # results.parquet and scores.json carry the hidden private metrics.
+    hide_prediction_output: True
+    hide_score_output: True
     tasks:
       - 0
 
+# Column keys must match the keys of phases/main/input_data/config.yaml
+# (scoring.columns), plus `duration` added by the scoring program.
 leaderboards:
   - title: Results
     key: main
     columns:
-      - title: Test Accuracy
-        key: test
+      - title: Accuracy (public)
+        key: accuracy
         index: 0
-        sorting: asc
-      - title: Private Test Accuracy
-        key: private_test
+        sorting: desc
+      - title: Accuracy (private)
+        key: accuracy_private
         index: 1
-        sorting: asc
+        sorting: desc
         hidden: True
-      - title: Train time
-        key: train_time
+      - title: Duration (s)
+        key: duration
         index: 2
-        sorting: desc
-      - title: Test time
-        key: test_time
-        index: 3
-        sorting: desc
+        sorting: asc

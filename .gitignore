@@ -1,8 +1,14 @@
-*.csv
 .DS_Store
 *.pyc
-*.xml
+__pycache__/
 *.zip
-ingestion_res/*
-scoring_res/*
-dev_phase/*
+# benchopt run outputs and caches
+outputs/
+__cache__/
+.pytest_cache/
+# local data home (benchopt prepare output)
+data/
+# local bundle / ingestion / scoring test runs
+_bundle/
+ingestion_res/
+scoring_res/

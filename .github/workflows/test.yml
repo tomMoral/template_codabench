@@ -1,89 +1,66 @@
-# Test that the docker image builds correctly
-# and that running the ingestion and scoring programs works
-# Also use cache for the data and the docker image.
-name: Test Docker Image
+# CI: lint + benchopt design tests + a native end-to-end ingestion/scoring
+# run on the Simulated dataset, plus a Docker image build.
+name: Test
 
 on:
-    push:
-        branches: [ main ]
-    pull_request:
+  push:
+    branches: [main]
+  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-    test:
-        runs-on: ubuntu-latest
-        env:
-            DOCKER_IMAGE_NAME: docker-codabench-test
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install
+        run: |
+          pip install -U pip flake8 pytest
+          pip install -r requirements.txt
+      - name: Lint
+        run: flake8 . --max-line-length=79 --exclude=.git,worktrees,__cache__
+      - name: benchopt design tests
+        run: benchopt test benchmark --skip-install
+      - name: Smoke run on Simulated
+        run: |
+          benchopt run benchmark -d Simulated -s Dummy -s solution/submission.py \
+            -r 1 --no-cache --no-plot --no-html --no-display
+      - name: Build bundle + end-to-end ingestion + scoring (Simulated)
+        run: |
+          python tools/create_bundle.py
+          python -c "import zipfile; zipfile.ZipFile('bundle.zip').extractall('_bundle')"
+          # No real data in CI: run the phase on the Simulated dataset.
+          sed -i 's/- Real/- Simulated/' _bundle/main_phase/input_data/config.yaml
+          python _bundle/ingestion_program/ingestion.py \
+            --submission-dir _bundle/solution \
+            --input-data _bundle/main_phase/input_data \
+            --benchmark-dir benchmark \
+            --output-dir ingestion_res
+          python _bundle/scoring_program/scoring.py \
+            --prediction-dir ingestion_res \
+            --output-dir scoring_res
+          python -c "import json; s=json.load(open('scoring_res/scores.json')); \
+            keys={'accuracy','accuracy_private','duration'}; \
+            assert keys <= set(s), s; print('scores OK:', s)"
 
-        steps:
-            - name: Delete huge unnecessary tools folder
-              run: |
-                echo "################################"
-                echo "Disk usage BEFORE cleanup:"
-                echo "################################"
-                df -h
-
-                echo "Removing .NET..."
-                rm -rf /usr/share/dotnet || true
-
-                echo "Removing Android SDK..."
-                sudo rm -rf /usr/local/lib/android || true
-
-                echo "Removing GHC / Haskell..."
-                rm -rf /opt/ghc || true
-                sudo rm -rf /usr/local/.ghcup || true
-
-                echo "################################"
-                echo "Disk usage AFTER cleanup:"
-                echo "################################"
-                df -h
-
-            - name: Checkout repository
-              uses: actions/checkout@v3
-
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v3
-
-            - name: Docker build
-              uses: docker/build-push-action@v6
-              with:
-                file: ./tools/Dockerfile
-                push: false
-                load: true
-                tags: ${{ env.DOCKER_IMAGE_NAME }}
-                # Use GitHub Actions (GHA) as the cache backend
-                # 'cache-from' attempts to restore layers from previous runs
-                cache-from: type=gha,scope=${{ env.DOCKER_IMAGE_NAME }}-${{ hashFiles('**/Dockerfile') }}-${{ hashFiles('**/requirements.txt') }}
-                # 'cache-to' saves the new layers after the build finishes
-                cache-to: type=gha,mode=max,scope=${{ env.DOCKER_IMAGE_NAME }}-${{ hashFiles('**/Dockerfile') }}-${{ hashFiles('**/requirements.txt') }}
-
-            - uses: actions/setup-python@main
-              with:
-                python-version: '3.12'
-                pip-install: -r requirements.txt
-                cache: 'pip' # caching pip dependencies
-            - name: Prepare input/output directories
-              run: python tools/setup_data.py
-
-            - name: Test ingestion program
-              run: |
-                docker run --rm -u root \
-                    -v "./ingestion_program":"/app/ingestion_program" \
-                    -v "./dev_phase/input_data":/app/input_data \
-                    -v "./ingestion_res":/app/output \
-                    -v "./solution":/app/ingested_program \
-                    --name ingestion ${{ env.DOCKER_IMAGE_NAME }} \
-                        python /app/ingestion_program/ingestion.py
-
-            - name: Test scoring program
-              run: |
-                docker run --rm -u root \
-                    -v "./scoring_program":"/app/scoring_program" \
-                    -v "./dev_phase/reference_data":/app/input/ref \
-                    -v "./ingestion_res":/app/input/res \
-                    -v "./scoring_res":/app/output \
-                    --name scoring ${{ env.DOCKER_IMAGE_NAME }} \
-                        python /app/scoring_program/scoring.py
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (build-only)
+        uses: docker/build-push-action@v6
+        with:
+          file: ./tools/Dockerfile
+          push: false
+          load: false
+          tags: codabench-compet-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

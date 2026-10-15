@@ -1,72 +1,50 @@
+"""Scoring program for the competition.
+
+All evaluation happens in the ingestion run; this only parses the raw
+benchopt results (``results.parquet``) into the flat ``scores.json`` the
+leaderboard consumes. The forwarded phase config's ``scoring.columns`` maps
+leaderboard keys to dataframe columns; a listed column that is missing or
+NaN fails loudly.
+"""
+
 import json
+import math
 from pathlib import Path
 
-import pandas as pd
-
-EVAL_SETS = ["test", "private_test"]
+import yaml
 
 
-def compute_accuracy(predictions, targets):
-    # Make sure there is no NaN, as pandas ignores them in mean computation
-    predictions = predictions.fillna(-10).values
-    # Return mean of correct predictions
-    return (predictions == targets.values).mean()
+def main(prediction_dir, output_dir):
+    from benchopt.results import read_results
 
+    df = read_results(prediction_dir / "results.parquet")
+    config = yaml.safe_load((prediction_dir / "config.yaml").read_text())
+    columns = config["scoring"]["columns"]
 
-def main(reference_dir, prediction_dir, output_dir):
     scores = {}
-    for eval_set in EVAL_SETS:
-        print(f'Scoring {eval_set}')
+    for key, col in columns.items():
+        value = float(df[col].iloc[0]) if col in df.columns else math.nan
+        if math.isnan(value):
+            raise SystemExit(f"[scoring] column {col!r} (leaderboard "
+                             f"key {key!r}) is missing or NaN.")
+        scores[key] = value
 
-        predictions = pd.read_csv(
-            prediction_dir / f'{eval_set}_predictions.csv'
-        )
-        targets = pd.read_csv(
-            reference_dir / f'{eval_set}_labels.csv'
-        )
+    scores["duration"] = json.loads(
+        (prediction_dir / "metadata.json").read_text())["duration"]
 
-        scores[eval_set] = float(compute_accuracy(predictions, targets))
-
-    # Add train and test times in the score
-    json_durations = (prediction_dir / 'metadata.json').read_text()
-    durations = json.loads(json_durations)
-    scores.update(**durations)
-    print(scores)
-
-    # Write output scores
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / 'scores.json').write_text(json.dumps(scores))
+    (output_dir / "scores.json").write_text(json.dumps(scores))
+    # Keys only: the log is shown to the submitter, values include hidden
+    # private metrics.
+    print(f"[scoring] wrote {', '.join(scores)} to scores.json")
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Scoring program for codabench"
-    )
-    parser.add_argument(
-        "--reference-dir",
-        type=str,
-        default="/app/input/ref",
-        help="",
-    )
-    parser.add_argument(
-        "--prediction-dir",
-        type=str,
-        default="/app/input/res",
-        help="",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="/app/output",
-        help="",
-    )
-
+    parser = argparse.ArgumentParser(description="Competition scoring")
+    parser.add_argument("--prediction-dir", default="/app/input/res")
+    parser.add_argument("--output-dir", default="/app/output")
     args = parser.parse_args()
 
-    main(
-        Path(args.reference_dir),
-        Path(args.prediction_dir),
-        Path(args.output_dir)
-    )
+    main(Path(args.prediction_dir), Path(args.output_dir))

@@ -1,2 +1,9 @@
+# Dependencies for the ingestion + scoring programs and every submission
+# (the Docker image). The ingestion program runs the benchopt benchmark on the
+# submission, so it needs benchopt plus everything the benchmark and the
+# submissions import at run time. This is the participants' dependency
+# contract: no install happens at submission time.
+benchopt>=1.10
+numpy
 pandas
 scikit-learn
