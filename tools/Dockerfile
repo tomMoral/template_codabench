@@ -12,23 +12,29 @@
 #         <image> benchopt prepare /compet/benchmark -d Real
 #
 #     # reproduce the platform evaluation on a submission folder
-#     docker run -v <host-data>:/app/data \
+#     docker run --gpus all -v <host-data>:/app/data \
 #         -v <phase>/input_data:/app/input_data \
 #         -v <submission>:/app/ingested_program -v <results>:/app/output \
 #         <image> python3 /compet/ingestion_program/ingestion.py
 #
-# For GPU submissions, install torch from the PyTorch wheel index before
-# requirements.txt, e.g. `pip install torch --index-url
-# https://download.pytorch.org/whl/cu126` (the wheels bundle the CUDA
-# runtime, so no CUDA base image is needed).
+# Python 3.12 base; torch comes from the PyTorch wheel index, whose wheels
+# bundle the CUDA runtime, so GPU works through the nvidia container runtime
+# without a CUDA base image.
 FROM python:3.12-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# torch with an explicit CUDA channel: cu126 runs on any R525+ driver (cu128+
+# for Blackwell GPUs, cpu for CI). Installed first so requirements.txt keeps
+# this build.
+ARG TORCH_CHANNEL=cu126
+RUN pip install -U pip && pip install --no-cache-dir \
+    torch --index-url https://download.pytorch.org/whl/${TORCH_CHANNEL}
+
 # All Python dependencies a submission may import: nothing is installed at
 # submission time.
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install -U pip && pip install --no-cache-dir -r /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # The programs + the benchopt benchmark they run (baked in, so the phase
 # bundle only carries config; an image tag pins the exact evaluation).
@@ -42,4 +48,4 @@ ENV BENCHOPT_DATA_HOME=/app/data
 VOLUME /app/data
 
 # Fail the build if the stack is incoherent.
-RUN python -c "import benchopt, pandas, sklearn"
+RUN python -c "import benchopt, pandas, sklearn, torch"

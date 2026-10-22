@@ -54,13 +54,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          sudo rm -rf /usr/local/.ghcup || true
       - uses: docker/setup-buildx-action@v3
-      - name: Build image (build-only)
+      - name: Build image (CPU torch, build-only)
         uses: docker/build-push-action@v6
         with:
           file: ./tools/Dockerfile
           push: false
           load: false
+          build-args: TORCH_CHANNEL=cpu
           tags: codabench-compet-test
           cache-from: type=gha
           cache-to: type=gha,mode=max
