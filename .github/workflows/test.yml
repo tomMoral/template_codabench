@@ -41,7 +41,6 @@ jobs:
           python _bundle/ingestion_program/ingestion.py \
             --submission-dir _bundle/solution \
             --input-data _bundle/main_phase/input_data \
-            --benchmark-dir benchmark \
             --output-dir ingestion_res
           python _bundle/scoring_program/scoring.py \
             --prediction-dir ingestion_res \

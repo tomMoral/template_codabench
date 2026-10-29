@@ -1,8 +1,9 @@
 """Build the image and run ingestion + scoring in it (local platform test).
 
-Mirrors the platform layout: the phase directory (run config) is
-mounted as ``/app/input_data``, a submission as ``/app/ingested_program``, and
-the prepared data as ``/app/data`` (read-only). Prepare the data first with
+Mirrors the platform layout: the phase directory (run config) and the
+benchmark are mounted as ``/app/input_data``, a submission as
+``/app/ingested_program``, and the prepared data as ``/app/data``
+(read-only). Prepare the data first with
 ``benchopt prepare benchmark -d Real`` (writes ``benchmark/data``).
 
 Usage
@@ -37,7 +38,6 @@ if __name__ == "__main__":
     client.images.build(path=str(REPO), dockerfile="tools/Dockerfile",
                         tag=image)
 
-    # The benchmark is baked into the image; the phase only carries config.
     phase = REPO / "phases/main/input_data"
     out = REPO / "ingestion_res"
     out.mkdir(exist_ok=True)
@@ -47,6 +47,7 @@ if __name__ == "__main__":
         command="python3 /compet/ingestion_program/ingestion.py",
         volumes=[
             f"{phase}:/app/input_data",
+            f"{REPO / 'benchmark'}:/app/input_data/benchmark:ro",
             f"{args.submission}:/app/ingested_program",
             f"{out}:/app/output",
             f"{args.data}:/app/data:ro",

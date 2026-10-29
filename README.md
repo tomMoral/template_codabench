@@ -69,9 +69,9 @@ python tools/create_bundle.py        # -> bundle.zip, to upload on Codabench
 ```
 
 The bundle carries the competition config, the pages, the programs, the
-sample submission and the phase config. The benchmark is baked into the
-Docker image, and the data is staged on the compute worker, so neither is in
-the bundle.
+sample submission and the phase `input_data`: its config and the benchmark,
+so a benchmark change is a push of the phase, not an image rebuild. The data
+is staged on the compute worker, so it is not in the bundle.
 
 To run the platform path locally, extract the bundle and run its programs:
 
@@ -79,8 +79,7 @@ To run the platform path locally, extract the bundle and run its programs:
 python -c "import zipfile; zipfile.ZipFile('bundle.zip').extractall('_bundle')"
 python _bundle/ingestion_program/ingestion.py \
     --submission-dir _bundle/solution \
-    --input-data _bundle/main_phase/input_data \
-    --benchmark-dir benchmark --output-dir ingestion_res
+    --input-data _bundle/main_phase/input_data --output-dir ingestion_res
 python _bundle/scoring_program/scoring.py \
     --prediction-dir ingestion_res --output-dir scoring_res
 cat scoring_res/scores.json
@@ -92,12 +91,21 @@ cat scoring_res/scores.json
 ## Staging the data on a compute worker
 
 The worker mounts the prepared data read-only at `/app/data`. Prepare it
-once, with the image:
+once, with the image, from the phase `input_data` of the bundle: what is
+staged and what submissions run then come from the same files, and the
+datasets are those of the phase config.
 
 ```bash
-docker run -v <host-data>:/app/data <image> \
-    benchopt prepare /compet/benchmark -d Real
+docker run -e BENCHOPT_CACHE=/tmp/benchopt -v <host-data>:/app/data \
+    -v <bundle>/main_phase/input_data:/app/input_data:ro <image> \
+    benchopt prepare /app/input_data/benchmark \
+    --config /app/input_data/config.yaml
 ```
+
+`BENCHOPT_CACHE` keeps the prepare cache off the read-only benchmark, and the
+container drops it, so a new staging prepares for real. Run it a second time
+with `<host-data>:/app/data:ro`, as submissions see the data: a dataset that
+still writes fails there rather than on every submission.
 
 ## CI
 

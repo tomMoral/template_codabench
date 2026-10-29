@@ -3,10 +3,10 @@
 A thin wrapper around ``benchopt run``. A submission is a benchopt solver:
 a single ``submission.py`` (a ``CompetSolver``) holding all its Python
 code, plus optional non-code files (weights, configs) it reads from
-``meta["submission_dir"]``. This program runs the benchmark baked into the
-image at ``/compet/benchmark`` on that file, loaded by path::
+``meta["submission_dir"]``. This program runs the benchmark shipped in the
+phase ``input_data/benchmark`` on that file, loaded by path::
 
-    benchopt run /compet/benchmark --config <run_config> \
+    benchopt run <input_data>/benchmark --config <run_config> \
         -s <submission_dir>/submission.py -r 1 --no-cache --no-plot \
         --output <output_dir>/results.parquet
 
@@ -35,10 +35,13 @@ import time  # noqa: E402
 import yaml  # noqa: E402
 
 
-def main(submission_dir, output_dir, benchmark_dir, input_dir):
+def main(submission_dir, output_dir, input_dir):
     submission = submission_dir / "submission.py"
     if not submission.is_file():
         raise SystemExit(f"No submission.py found in {submission_dir}.")
+    benchmark_dir = input_dir / "benchmark"
+    if not (benchmark_dir / "objective.py").is_file():
+        raise SystemExit(f"No benchopt benchmark found in {benchmark_dir}.")
 
     config = input_dir / "config.yaml"
     cfg = yaml.safe_load(config.read_text())
@@ -69,14 +72,11 @@ if __name__ == "__main__":
     parser.add_argument("--submission-dir", default="/app/ingested_program")
     parser.add_argument("--output-dir", default="/app/output")
     parser.add_argument("--input-data", default="/app/input_data",
-                        help="Phase dir holding config.yaml")
-    parser.add_argument("--benchmark-dir", default="/compet/benchmark",
-                        help="benchopt benchmark (baked into the image)")
+                        help="Phase dir holding config.yaml and benchmark/")
     args = parser.parse_args()
 
     main(
         Path(args.submission_dir),
         Path(args.output_dir),
-        Path(args.benchmark_dir),
         Path(args.input_data),
     )

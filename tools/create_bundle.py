@@ -1,12 +1,11 @@
 """Build the Codabench bundle for the competition.
 
 The bundle ships the competition config, the pages, the sample submission, the
-ingestion/scoring programs, and the phase directory as ``main_phase`` (just the
-phase ``config.yaml`` + reference placeholder). The benchopt **benchmark** is
-baked into the Docker image (``/compet/benchmark``), not the bundle; the
-**data** is staged onto the compute worker at ``$BENCHOPT_DATA_HOME``
-(``/app/data``), which keeps the sealed private split out of the public
-artifact.
+ingestion/scoring programs, and the phase directory as ``main_phase``: its
+``input_data`` holds the phase ``config.yaml`` and the benchopt **benchmark**,
+so a benchmark change needs no image rebuild. The **data** is staged onto the
+compute worker at ``$BENCHOPT_DATA_HOME`` (``/app/data``), which keeps the
+sealed private split out of the public artifact.
 
 Usage
 -----
@@ -61,6 +60,8 @@ def build_bundle():
 
         _add_file(bundle, ROOT_DIR / "phases/main/input_data/config.yaml",
                   "main_phase/input_data/config.yaml")
+        _add_dir(bundle, ROOT_DIR / "benchmark",
+                 "main_phase/input_data/benchmark")
         _add_dir(bundle, ROOT_DIR / "phases/reference_data",
                  "main_phase/reference_data")
     print(f"-> {out.name}")

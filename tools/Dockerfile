@@ -1,6 +1,7 @@
-# One image for the competition: it carries the environment, the two programs
-# and the benchopt benchmark (/compet/benchmark). The phase bundle mounted on
-# /app/input_data only carries the run config. Build from the repo root:
+# One image for the competition: it carries the environment and the two
+# programs. The benchopt benchmark comes with the phase input_data mounted on
+# /app/input_data, so a benchmark change needs no rebuild. Build from the repo
+# root:
 #
 #     docker build -f tools/Dockerfile -t <dockerhub-user>/<competition>:v1 .
 #
@@ -8,12 +9,16 @@
 #
 #     # stage the data into a host folder (bind-mounted read-only as
 #     # /app/data for the evaluation runs)
-#     docker run -v <host-data>:/app/data \
-#         <image> benchopt prepare /compet/benchmark -d Real
+#     # from the phase input_data, the cache off its read-only benchmark
+#     docker run -e BENCHOPT_CACHE=/tmp/benchopt \
+#         -v <host-data>:/app/data \
+#         -v <bundle>/main_phase/input_data:/app/input_data:ro <image> \
+#         benchopt prepare /app/input_data/benchmark \
+#         --config /app/input_data/config.yaml
 #
 #     # reproduce the platform evaluation on a submission folder
 #     docker run --gpus all -v <host-data>:/app/data \
-#         -v <phase>/input_data:/app/input_data \
+#         -v <bundle>/main_phase/input_data:/app/input_data \
 #         -v <submission>:/app/ingested_program -v <results>:/app/output \
 #         <image> python3 /compet/ingestion_program/ingestion.py
 #
@@ -36,14 +41,11 @@ RUN pip install -U pip && pip install --no-cache-dir \
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-# The programs + the benchopt benchmark they run (baked in, so the phase
-# bundle only carries config; an image tag pins the exact evaluation).
 COPY ingestion_program /compet/ingestion_program
 COPY scoring_program /compet/scoring_program
-COPY benchmark /compet/benchmark
 
 # Data is bind-mounted read-only at /app/data by the compute worker; the
-# phase config lands on /app/input_data.
+# phase config and benchmark land on /app/input_data.
 ENV BENCHOPT_DATA_HOME=/app/data
 VOLUME /app/data
 
