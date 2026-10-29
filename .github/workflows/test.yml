@@ -23,6 +23,8 @@ jobs:
       - name: Install
         run: |
           pip install -U pip flake8 pytest
+          # CPU torch first, so requirements.txt keeps it (no CUDA wheels).
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
       - name: Lint
         run: flake8 . --max-line-length=79 --exclude=.git,worktrees,__cache__
