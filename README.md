@@ -73,10 +73,13 @@ sample submission and the phase `input_data`: its config and the benchmark,
 so a benchmark change is a push of the phase, not an image rebuild. The data
 is staged on the compute worker, so it is not in the bundle.
 
-To run the platform path locally, extract the bundle and run its programs:
+To run the platform path locally, extract the bundle and run its programs.
+Point `BENCHOPT_DATA_HOME` at the prepared data: the bundled benchmark
+otherwise looks for it in its own `data/` folder.
 
 ```bash
 python -c "import zipfile; zipfile.ZipFile('bundle.zip').extractall('_bundle')"
+export BENCHOPT_DATA_HOME=$PWD/benchmark/data
 python _bundle/ingestion_program/ingestion.py \
     --submission-dir _bundle/solution \
     --input-data _bundle/main_phase/input_data --output-dir ingestion_res
