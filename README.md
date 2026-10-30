@@ -61,9 +61,11 @@ public and private test set.
   run the ingestion and scoring programs.
 - `tools/run_docker.py`: convenience script to build and test the docker image
   locally without knowing docker commands. See [here](#setting-up-and-testing-the-docker-image) for more details.
-- `tools/encrypted_mae_bench.py`: benchmark of a mean absolute error computed
-  on encrypted labels (OpenFHE), to keep the hidden labels unreadable when the
-  score is computed in the submission's process.
+- `tools/encrypted_score_bench.py`: benchmark of R2, a capped NLL and a mean
+  absolute error computed on encrypted labels (OpenFHE), to keep the hidden
+  labels unreadable when the score is computed in the submission's process.
+  `tools/encrypted_scoring.md` explains which metrics fit which route, with
+  their measured costs.
 
 ## Instruction to create the codabench bundle
 
