@@ -2,10 +2,11 @@
 
 The bundle ships the competition config, the pages, the sample submission, the
 ingestion/scoring programs, and the phase directory as ``main_phase``: its
-``input_data`` holds the phase ``config.yaml`` and the benchopt **benchmark**,
-so a benchmark change needs no image rebuild. The **data** is staged onto the
-compute worker at ``$BENCHOPT_DATA_HOME`` (``/app/data``), which keeps the
-sealed private split out of the public artifact.
+``input_data`` holds the phase ``config.yaml``, the benchopt **benchmark**
+(a benchmark change needs no image rebuild) and the prepared **data** from
+``$BENCHOPT_DATA_HOME`` (default ``benchmark/data``), as ``data/``. Run
+``benchopt prepare`` first. For data too large for the bundle, staged on a
+self-hosted worker instead, delete ``data/`` from the bundle.
 
 Usage
 -----
@@ -17,6 +18,8 @@ import zipfile
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = Path(os.environ.get("BENCHOPT_DATA_HOME",
+                               ROOT_DIR / "benchmark/data"))
 
 # Skip benchopt run artefacts / caches / staged data when zipping.
 _SKIP_PARTS = ("outputs", "__cache__", "__pycache__", ".pytest_cache", "data")
@@ -63,6 +66,10 @@ def build_bundle():
                   "main_phase/input_data/config.yaml")
         _add_dir(bundle, ROOT_DIR / "benchmark",
                  "main_phase/input_data/benchmark")
+        if DATA_DIR.is_dir():
+            _add_dir(bundle, DATA_DIR, "main_phase/input_data/data")
+        else:
+            print(f"No prepared data at {DATA_DIR}: run `benchopt prepare`.")
         _add_dir(bundle, ROOT_DIR / "phases/reference_data",
                  "main_phase/reference_data")
     print(f"-> {out.name}")

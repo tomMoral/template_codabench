@@ -9,7 +9,8 @@ image: logo.png
 registration_auto_approve: False
 
 # The image submissions run in: built from tools/Dockerfile, it carries the
-# requirements.txt stack. The benchmark ships in the phase input_data.
+# requirements.txt stack. The benchmark and the prepared data ship in
+# the phase input_data.
 docker_image: <dockerhub-user>/<competition>:v1
 
 # Only the leaderboard metrics are exposed.

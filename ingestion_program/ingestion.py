@@ -14,10 +14,10 @@ The phase ``config.yaml`` is a **native benchopt run config** (``dataset``,
 ``seed``, ``no_timeout``, ...) plus one competition-only key stripped before
 the run (benchopt rejects unknown options): ``scoring`` (parsed by scoring.py
 — the config is forwarded with the raw results parquet; all evaluation happens
-in the objective, which always trains the solver). The data location is the
-image's $BENCHOPT_DATA_HOME (/app/data, where the compute worker mounts the
-staged data read-only). $BENCHOPT_DEBUG ensures any solver error aborts the
-run.
+in the objective, which always trains the solver). The prepared data comes
+with the phase, in ``input_data/data``. Without it, the run uses the image's
+$BENCHOPT_DATA_HOME (/app/data, where a self-hosted worker mounts the staged
+data read-only). $BENCHOPT_DEBUG ensures any solver error aborts the run.
 """
 
 import os
@@ -49,6 +49,8 @@ def main(submission_dir, output_dir, input_dir):
     cfg = {k: v for k, v in cfg.items() if k != "scoring"}
     run_config = Path(tempfile.mkdtemp(prefix="compet_run_")) / "config.yml"
     run_config.write_text(yaml.safe_dump(cfg))
+    if (input_dir / "data").is_dir():
+        os.environ["BENCHOPT_DATA_HOME"] = str((input_dir / "data").resolve())
 
     # Raw results + config for the scoring program, which only parses them.
     output_dir.mkdir(parents=True, exist_ok=True)

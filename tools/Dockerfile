@@ -7,8 +7,8 @@
 #
 # The same image serves the Codabench workers and the participants:
 #
-#     # stage the data into a host folder (bind-mounted read-only as
-#     # /app/data for the evaluation runs)
+#     # self-hosted worker only: stage the data into a host folder
+#     # (bind-mounted read-only as /app/data for the evaluation runs)
 #     # from the phase input_data, the cache off its read-only benchmark
 #     docker run -e BENCHOPT_CACHE=/tmp/benchopt \
 #         -v <host-data>:/app/data \
@@ -44,8 +44,8 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 COPY ingestion_program /compet/ingestion_program
 COPY scoring_program /compet/scoring_program
 
-# Data is bind-mounted read-only at /app/data by the compute worker; the
-# phase config and benchmark land on /app/input_data.
+# The phase config, benchmark and data land on /app/input_data. Data staged
+# on a self-hosted worker instead is bind-mounted read-only at /app/data.
 ENV BENCHOPT_DATA_HOME=/app/data
 VOLUME /app/data
 

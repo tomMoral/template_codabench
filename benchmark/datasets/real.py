@@ -3,14 +3,14 @@
     benchopt prepare benchmark -d Real
 
 ``prepare`` writes one CSV per split (features + a ``target`` column) under
-``get_data_path("real")``. On the competition worker, the image sets
-``BENCHOPT_DATA_HOME`` and the prepared data is staged there, read-only.
+``get_data_path("real")``. The bundle ships the prepared data in the phase
+``input_data``, and ingestion points ``BENCHOPT_DATA_HOME`` at it.
 
 Adapt: replace the scikit-learn stand-in data with a download or conversion
 of your raw data, and cut the split the way your evaluation protocol needs
-(groups, time, held-out sites...). Write the ``private`` split only where its
-raw source is available (the worker), so the public starting kit cannot
-produce it.
+(groups, time, held-out sites...). Participants who can run ``prepare`` on
+the full raw data can rebuild the ``private`` split: keep its raw source out
+of what you publish, or rely on the terms to protect it.
 
 For a cross-validated protocol, cut the folds in ``get_data`` from
 ``self.get_seed(use_repetition=True)``, as ``Simulated`` does, set

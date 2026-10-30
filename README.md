@@ -9,10 +9,51 @@ classification task, scored by accuracy on a public and a private test set.
 `benchopt run`, exactly the code the server runs. The Codabench ingestion and
 scoring programs are thin wrappers around it.
 
+<!-- BEGIN DataCamp course section. Delete up to END for a general release. -->
+## DataCamp course: instructions and grading
+
+Your challenge is graded on the three points of
+[What the starting kit must show](#what-the-starting-kit-must-show): the data
+is interesting, the question is interesting and this data can answer it, and
+the evaluation can answer the question. Only what the starting kit shows
+counts.
+
+To hand in:
+
+- [ ] Everything in [Before opening the competition](#before-opening-the-competition)
+      is checked.
+- [ ] The starting kit is executed and committed with its outputs.
+- [ ] The repository link and the Codabench competition link are sent to the
+      instructors.
+<!-- END DataCamp course section. -->
+
+## Documentation and AI skills
+
+- **benchopt documentation**: <https://benchopt.github.io>. Start with the
+  [user guide](https://benchopt.github.io/stable/user_guide/) and the
+  [seeding guide](https://benchopt.github.io/stable/user_guide/controlling_randomness.html)
+  for cross-validation.
+- **Codabench documentation**: <https://docs.codabench.org>, in particular the
+  [competition bundle](https://docs.codabench.org/latest/Organizers/Benchmark_Creation/Competition-Bundle-Structure/)
+  page.
+- **AI agent skills**, in [`.agents/skills/`](.agents/skills/) (mirrored in
+  `.claude/skills/` for Claude Code). Coding agents (Claude Code, Codex,
+  Copilot, Cursor, Gemini CLI...) load them when you open the repository.
+  They are plain Markdown, so you can also read them yourself.
+  - [`using-benchopt`](.agents/skills/using-benchopt/SKILL.md): writing and
+    running benchopt datasets, objectives and solvers. Refresh it after a
+    benchopt upgrade with `benchopt sync-skills . --no-claude`.
+  - [`codabench-benchopt`](.agents/skills/codabench-benchopt/SKILL.md):
+    designing a benchopt-powered Codabench competition. Read
+    [`data-and-splits.md`](.agents/skills/codabench-benchopt/data-and-splits.md)
+    before choosing your split: it covers cross-validation versus a sealed
+    split, leakage, baselines and the public/private shift.
+
 ## Layout
 
 | Path | Content |
 |---|---|
+| `template_starting_kit.ipynb` | skeleton of the participants' starting kit, with the EDA and the evaluation |
 | `benchmark/objective.py` | the task: what the solver receives, and the metric |
 | `benchmark/datasets/real.py` | the real data: `prepare()` builds the splits, `get_data()` loads them |
 | `benchmark/datasets/simulated.py` | synthetic data with the same keys, for smoke tests and CI |
@@ -23,32 +64,66 @@ scoring programs are thin wrappers around it.
 | `phases/main/input_data/config.yaml` | the phase: benchopt run config + leaderboard column map |
 | `competition.yaml`, `pages/` | the Codabench competition and its pages |
 | `tools/` | bundle builder, Docker image, local Docker run |
-| `template_starting_kit.ipynb` | skeleton of the participants' starting kit |
+| `.agents/skills/` | the AI agent skills above |
+
+## What the starting kit must show
+
+A good challenge makes three points, each backed by evidence in the starting
+kit notebook and tied to its exploratory data analysis (EDA).
+
+| Point | Evidence expected in the starting kit |
+|---|---|
+| **The data is interesting.** | Where it comes from, its license, its size in independent units (patients, sites, sessions, not rows). It is not an already-solved toy dataset. |
+| **The question is interesting and this data can answer it.** | Who would use the model and for what decision. A simple baseline clearly beats the `Dummy` floor, and leaves room above it. |
+| **The evaluation can answer the question.** | Why this metric and not the obvious alternative. Why this split, which unit it holds out and why it matches deployment. Checks that it does not leak. Public and private scores of the baseline agree, and the test set is big enough for leaderboard gaps to mean something. |
+
+The starting kit carries the full argument. The Participate page is a short
+summary of it that links to the notebook. Keep both easy to read: short code
+cells, every figure with a title, axis labels and a one-line takeaway, and the
+notebook committed **with its outputs** so it reads on GitHub without running
+it.
 
 ## Adapting the template
 
 In this order, since each step builds on the previous one:
 
-1. **Evaluation protocol.** Decide how the data is split (random, by group,
-   by time...) and what separates the public from the private test set.
-2. **Data.** Rewrite `Real.prepare()` to fetch or convert your raw data and
-   cut the splits, and `Real.get_data()` to load them. Make `Simulated`
-   return the same keys and test subsets.
-3. **Task and metric.** Adapt `Objective.set_data`, `get_objective` and
+1. **Data and question.** Pick the data and the question. Rename the
+   notebook to `<challenge>_starting_kit.ipynb` and fill in its introduction.
+2. **EDA.** Explore the data in the notebook. Look for the structure that
+   decides the split: groups (patients, sites, subjects), time, duplicates.
+3. **Evaluation protocol.** From the EDA, choose the metric and how the data
+   is split (random, by group, by time...), and what separates the public
+   from the private test set.
+4. **Data in the benchmark.** Rewrite `Real.prepare()` to fetch or convert
+   your raw data and cut the splits, and `Real.get_data()` to load them. Make
+   `Simulated` return the same keys and test subsets.
+5. **Task and metric.** Adapt `Objective.set_data`, `get_objective` and
    `evaluate_result`. Metrics come out as `objective_<metric>_<subset>`.
-4. **Submission contract.** Adapt `CompetSolver` to what `get_objective`
+6. **Submission contract.** Adapt `CompetSolver` to what `get_objective`
    returns, then the `Dummy` floor and the sample `random-forest.py`.
-5. **Phase and leaderboard.** Map the leaderboard keys to the objective's
+7. **Evaluation evidence.** Fill the notebook's evaluation section: leakage
+   checks, baseline scores on public and private, and the noise of the public
+   score.
+8. **Phase and leaderboard.** Map the leaderboard keys to the objective's
    columns in `phases/main/input_data/config.yaml`, and declare the same keys
    in `competition.yaml` (`hidden: True` for the private ones).
-6. **Environment.** List everything submissions may import in
+9. **Environment.** List everything submissions may import in
    `requirements.txt`, build and push the image from `tools/Dockerfile`, and
    set `docker_image` in `competition.yaml`.
-7. **Pages, dates and quotas** in `pages/` and `competition.yaml`.
-8. **Explain the evaluation.** The starting kit notebook (with an EDA) and the
-   Participate page must make every evaluation choice crystal clear: why the
-   problem matters, the choice of the metric, the choice of the split, and
-   the evidence that it does not leak.
+10. **Pages, dates and quotas** in `pages/` and `competition.yaml`. The
+    Participate page summarizes the notebook.
+
+## Before opening the competition
+
+- [ ] The starting kit covers the three points of
+      [What the starting kit must show](#what-the-starting-kit-must-show).
+- [ ] `Dummy` and the sample submission are scored on public and private,
+      and the sample submission clearly beats `Dummy`.
+- [ ] The split has a leakage check in the notebook.
+- [ ] CI is green.
+- [ ] `bundle.zip` uploads on Codabench and scores the sample submission.
+- [ ] No `TODO` is left in `pages/`, and no `<placeholder>` in
+      `competition.yaml`.
 
 ## Running locally
 
@@ -68,21 +143,29 @@ benchopt caches `prepare`: if you delete the data or change
 ## Building and testing the bundle
 
 ```bash
+benchopt prepare benchmark -d Real   # the bundle ships the prepared data
 python tools/create_bundle.py        # -> bundle.zip, to upload on Codabench
 ```
 
 The bundle carries the competition config, the pages, the programs, the
-sample submission and the phase `input_data`: its config and the benchmark,
-so a benchmark change is a push of the phase, not an image rebuild. The data
-is staged on the compute worker, so it is not in the bundle.
+sample submission and the phase `input_data`: its config, the benchmark and
+the prepared data (`$BENCHOPT_DATA_HOME`, default `benchmark/data`). A
+benchmark or data change is a new upload of the phase, not an image rebuild.
+It runs on Codabench's default compute workers, so you need no server of
+your own.
 
-To run the platform path locally, extract the bundle and run its programs.
-Point `BENCHOPT_DATA_HOME` at the prepared data: the bundled benchmark
-otherwise looks for it in its own `data/` folder.
+Two things to know about data in `input_data`:
+
+- **Size.** Keep the prepared data small (tens of MB). Prepare a compact
+  format (Parquet, `.npz`) rather than shipping raw files.
+- **Submissions can read it**, private split included, since they run in
+  the same process that evaluates them. The private labels are therefore
+  protected by the terms (accessing them is cheating), not by the platform.
+
+To run the platform path locally, extract the bundle and run its programs:
 
 ```bash
 python -c "import zipfile; zipfile.ZipFile('bundle.zip').extractall('_codabench/bundle')"
-export BENCHOPT_DATA_HOME=$PWD/benchmark/data
 python _codabench/bundle/ingestion_program/ingestion.py \
     --submission-dir _codabench/bundle/solution \
     --input-data _codabench/bundle/main_phase/input_data \
@@ -95,12 +178,16 @@ cat _codabench/scoring/scores.json
 `python tools/run_docker.py` does the same inside the Docker image (needs
 `pip install docker`).
 
-## Staging the data on a compute worker
+## Large data: staging it on a self-hosted worker
 
-The worker mounts the prepared data read-only at `/app/data`. Prepare it
-once, with the image, from the phase `input_data` of the bundle: what is
-staged and what submissions run then come from the same files, and the
-datasets are those of the phase config.
+Data too large for the bundle, or a private split that must stay out of the
+submissions' reach, needs a
+[self-hosted compute worker](https://docs.codabench.org/latest/Organizers/Running_a_benchmark/Compute-Worker-Management---Setup/)
+attached to a private queue. Delete `main_phase/input_data/data/` from the
+bundle: ingestion then reads the data from `/app/data`, where the worker
+mounts it read-only. Prepare it once, with the image, from the phase
+`input_data` of the bundle, so that what is staged and what submissions run
+come from the same files:
 
 ```bash
 docker run -e BENCHOPT_CACHE=/tmp/benchopt -v <host-data>:/app/data \

@@ -1,11 +1,25 @@
 # How to participate
 
+Each section below is a short summary. The
+[starting kit](TODO-link-to-the-starting-kit-notebook) gives the full argument,
+with the data analysis behind each choice.
+
 ## The task
 
-<Describe the data, the task and why it matters.> In this template: a binary
-classification of tabular samples, scored by **accuracy** (higher is better).
+**TODO:** one paragraph: the data, what is predicted from what, and why it
+matters.
+In this template: a binary classification of tabular samples.
+
+## The metric
+
+**TODO:** the metric, whether higher or lower is better, and why it fits
+the use case. In this template: **accuracy** (higher is better).
 
 ## The split
+
+**TODO:** the unit held out (rows, patients, sites, time periods) and the
+generalization it measures. If the test sets differ from the training set on
+purpose (new sites, later dates), say so.
 
 - **Public column** (live feedback): a public test set.
 - **Private / final ranking** (hidden): a private test set. Do not overfit
