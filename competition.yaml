@@ -59,9 +59,10 @@ phases:
     tasks:
       - 0
 
-# Column keys are those of scores.json (scoring program): <metric>_<test set>
-# for each test set of the reference data, the objective's metrics averaged
-# over the CV folds, and train_time (mean per fold) and duration.
+# Column keys are those of scores.json (scoring program), averaged over the
+# CV folds: the objective's metrics (<metric>_cv, <metric>_public),
+# <metric>_<test set> for each hidden test set of the reference data, and
+# train_time (mean per fold) and duration.
 leaderboards:
   - title: Results
     key: main

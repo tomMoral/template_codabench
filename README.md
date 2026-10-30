@@ -11,11 +11,14 @@ on a public and a private test set.
 scoring programs are thin wrappers around it:
 
 - **Ingestion** runs the benchmark on a submission. Each repetition trains it
-  on one CV fold, scores it on the held-out part of the fold, and returns
-  its predictions on the test sets.
-- **Scoring** scores these predictions against the test labels, which only it
-  can read (the phase `reference_data`), and averages every score over the
-  folds.
+  on one CV fold, scores it on the held-out part of the fold and on the
+  public test set, and returns its predictions on the private test set.
+- **Scoring** scores these predictions against the private labels, which
+  only it can read (the phase `reference_data`), and averages every score
+  over the folds.
+
+The metric lives in one place, `benchmark/benchmark_utils/metric.py`, which
+both the objective and the scoring program import.
 
 <!-- BEGIN DataCamp course section. Delete up to END for a general release. -->
 ## DataCamp course: instructions and grading
@@ -104,13 +107,13 @@ In this order, since each step builds on the previous one:
    (stratified, by group, by time...), and how the test sets are cut and what
    separates the public from the private one.
 4. **Data in the benchmark.** Rewrite `Real.prepare()` to fetch or convert
-   your raw data, cut the test sets and write their labels apart (they become
-   the phase `reference_data`), and `Real.get_data()` to load the rest. Make
-   `Simulated` return the same keys and types.
-5. **Task, CV and metric.** Adapt `Objective.set_data` (data and `cv`),
-   `get_objective` and `evaluate_result`, and set `n_repetitions` in
-   `phases/main/input_data/config.yaml` to the number of folds. Use the same
-   metric in `METRIC` of `scoring_program/scoring.py`.
+   your raw data, cut the test sets and write the private labels apart (they
+   become the phase `reference_data`), and `Real.get_data()` to load the
+   rest. Make `Simulated` return the same keys and types.
+5. **Task, CV and metric.** Write the metric in
+   `benchmark/benchmark_utils/metric.py`. Adapt `Objective.set_data` (data
+   and `cv`), `get_objective` and `evaluate_result`, and set `n_repetitions`
+   in `phases/main/input_data/config.yaml` to the number of folds.
 6. **Submission contract.** Adapt `CompetSolver` to what `get_objective`
    returns, then the `Dummy` floor and the sample `random-forest.py`.
 7. **Evaluation evidence.** Fill the notebook's evaluation section: leakage
@@ -166,9 +169,10 @@ sample submission and the phase data, from `$BENCHOPT_DATA_HOME` (default
 `benchmark/data`):
 
 - `input_data`: the config, the benchmark and the prepared data, without the
-  test labels. Submissions run with it.
-- `reference_data`: the test labels (the `reference/` folder written by
-  `prepare`). Only the scoring program reads it.
+  private labels. Submissions run with it.
+- `reference_data`: the private labels (the `reference/` folder written by
+  `prepare`). Only the scoring program reads it, with the metric of
+  `benchmark_utils`, which the bundle copies next to it.
 
 A benchmark or data change is a new upload of the phase, not an image
 rebuild. It runs on Codabench's default compute workers, so you need no
@@ -222,7 +226,7 @@ still writes fails there rather than on every submission.
 baselines on `Simulated`, then builds the bundle and runs its ingestion and
 scoring end to end on `Real`, and builds the Docker image on the CPU base
 image. If your data cannot be prepared in CI, run the end-to-end step on
-`Simulated`, which has no test labels.
+`Simulated`, which has no private labels.
 
 `.github/workflows/images.yml` builds and pushes the base images
 `codabench-benchopt` and `codabench-benchopt-gpu` from

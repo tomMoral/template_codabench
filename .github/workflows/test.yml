@@ -37,7 +37,7 @@ jobs:
       - name: Build bundle + end-to-end ingestion + scoring (Real)
         # The template's stand-in data ships with scikit-learn. If your data
         # cannot be prepared in CI, run this step on Simulated instead: it
-        # has no test labels, so only the CV score is checked.
+        # has no private labels, so the private score is not checked.
         run: |
           benchopt prepare benchmark -d Real
           python tools/create_bundle.py

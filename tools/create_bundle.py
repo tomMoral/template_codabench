@@ -5,10 +5,11 @@ ingestion/scoring programs, and the phase directory as ``main_phase``: its
 ``input_data`` holds the phase ``config.yaml``, the benchopt **benchmark**
 (a benchmark change needs no image rebuild) and the prepared **data** from
 ``$BENCHOPT_DATA_HOME`` (default ``benchmark/data``), as ``data/``. Its
-``reference/`` folder, the test labels, goes to ``reference_data`` instead,
-which only the scoring program reads. Run ``benchopt prepare`` first. For
-data too large for the bundle, staged on a self-hosted worker instead,
-delete ``input_data/data/`` from the bundle.
+``reference/`` folder, the hidden test labels, goes to ``reference_data``
+instead, which only the scoring program reads. The scoring program gets the
+benchmark's ``benchmark_utils`` (the metric). Run ``benchopt prepare``
+first. For data too large for the bundle, staged on a self-hosted worker
+instead, delete ``input_data/data/`` from the bundle.
 
 Usage
 -----
@@ -61,6 +62,8 @@ def build_bundle():
         _add_dir(bundle, ROOT_DIR / "pages", "pages")
         _add_dir(bundle, ROOT_DIR / "ingestion_program", "ingestion_program")
         _add_dir(bundle, ROOT_DIR / "scoring_program", "scoring_program")
+        _add_dir(bundle, ROOT_DIR / "benchmark/benchmark_utils",
+                 "scoring_program/benchmark_utils")
         _add_file(bundle, ROOT_DIR / "benchmark/solvers/random-forest.py",
                   "solution/submission.py")
 

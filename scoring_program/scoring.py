@@ -2,15 +2,15 @@
 
 The ingestion run cross-validates the submission, one fold per repetition.
 Each row of ``results.parquet`` holds the fold's metrics (``objective_*``)
-and the fold model's predictions on each test set
-(``objective_<test set>_pred``). This program scores the predictions against
-the labels of the phase ``reference_data`` (one ``<test set>.csv`` with a
-``target`` column per test set), and averages every score over the folds
-into ``scores.json``:
-``accuracy_<test set>``, the objective's metrics (``accuracy_cv``),
-``train_time`` and ``duration``.
+and its predictions on each hidden test set (``objective_<test set>_pred``).
+This program scores these predictions against the labels of the phase
+``reference_data`` (one ``<test set>.csv`` with a ``target`` column per hidden
+test set), and averages every score over the folds into ``scores.json``:
+``accuracy_cv``, ``accuracy_public``, ``accuracy_private``, ``train_time``
+and ``duration``.
 
-Adapt: ``METRIC`` to the objective's metric.
+The metric is the benchmark's ``benchmark_utils/metric.py``, which
+``tools/create_bundle.py`` copies next to this program.
 """
 
 import json
@@ -18,9 +18,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score
 
-METRIC_NAME, METRIC = "accuracy", accuracy_score
+from benchmark_utils.metric import NAME, score
 
 
 def main(prediction_dir, reference_dir, output_dir):
@@ -31,8 +30,8 @@ def main(prediction_dir, reference_dir, output_dir):
     scores = {}
     for ref in sorted(reference_dir.glob("*.csv")):
         y_true = pd.read_csv(ref)["target"]
-        scores[f"{METRIC_NAME}_{ref.stem}"] = np.mean(
-            [METRIC(y_true, pred)
+        scores[f"{NAME}_{ref.stem}"] = np.mean(
+            [score(y_true, pred)
              for pred in df[f"objective_{ref.stem}_pred"]])
     metrics = df.select_dtypes("number").filter(regex="^objective_")
     for col, value in metrics.mean().items():

@@ -2,8 +2,9 @@
 
 Mirrors the platform layout: the phase config, the benchmark and the
 prepared data are mounted as ``/app/input_data``, a submission as
-``/app/ingested_program``, the programs as ``/app/program``, and the test
-labels as ``/app/input/ref`` for scoring. Prepare the data first with
+``/app/ingested_program``, the programs as ``/app/program`` (with
+``benchmark_utils``, the metric, next to scoring), and the hidden test labels
+as ``/app/input/ref``. Prepare the data first with
 ``benchopt prepare benchmark -d Real`` (writes ``benchmark/data``).
 
 Usage
@@ -72,6 +73,8 @@ if __name__ == "__main__":
         command="python3 /app/program/scoring.py",
         volumes=[
             f"{REPO / 'scoring_program'}:/app/program:ro",
+            f"{REPO / 'benchmark/benchmark_utils'}:"
+            "/app/program/benchmark_utils:ro",
             f"{out}:/app/input/res",
             f"{data / 'reference'}:/app/input/ref:ro",
             f"{score}:/app/output",

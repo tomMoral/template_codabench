@@ -25,8 +25,7 @@ Your model is trained and scored with 5-fold cross-validation on the
 training data, then each fold's model predicts the test sets. Every score is
 averaged over the 5 folds.
 
-- **CV column**: the cross-validation score, the one you can reproduce
-  locally.
+- **CV column**: the cross-validation score.
 - **Public column** (live feedback): a public test set.
 - **Private / final ranking** (hidden): a private test set. Do not overfit
   the public column.
@@ -67,7 +66,8 @@ benchopt prepare benchmark -d Real
 benchopt run benchmark -d Real -s my_submission/submission.py -r 5
 ```
 
-The cross-validation score you get locally (`objective_accuracy_cv`,
-averaged over the 5 repetitions) is the CV column of the leaderboard. The
-benchmark you run *is* the benchmark the server runs. Select your models on
-it rather than on the public column.
+The cross-validation and public scores you get locally
+(`objective_accuracy_cv` and `objective_accuracy_public`, averaged over the 5
+repetitions) are the CV and public columns of the leaderboard. The benchmark
+you run *is* the benchmark the server runs. Select your models on the CV
+score rather than on the public one.

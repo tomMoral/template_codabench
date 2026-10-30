@@ -25,9 +25,9 @@ class Dataset(BaseDataset):
                                    n_features=self.n_features,
                                    random_state=seed)
         X, y = pd.DataFrame(X), pd.Series(y)
-        X_train, X_test, y_train, _ = train_test_split(
+        X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.4, random_state=seed)
-        X_pub, X_priv = train_test_split(X_test, test_size=0.5,
-                                         random_state=seed)
-        return dict(X=X_train, y=y_train,
-                    X_test={"public": X_pub, "private": X_priv})
+        X_pub, X_priv, y_pub, _ = train_test_split(
+            X_test, y_test, test_size=0.5, random_state=seed)
+        return dict(X=X_train, y=y_train, X_public=X_pub, y_public=y_pub,
+                    X_private=X_priv)
