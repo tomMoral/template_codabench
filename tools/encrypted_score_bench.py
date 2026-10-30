@@ -16,6 +16,7 @@ Three routes, from the cheapest to the most costly:
   predicted dispersion r is g(y, r) = gammaln(y + r) - gammaln(r), which is
   close to sum_k a_k(r) b_k(y) (SVD on public grids, Nystrom extension). The
   organizers encrypt b_k(y), the evaluator computes a_k(r) in the clear.
+  Without a cap, the NLL stays on this route.
 - MAE and the NLL cap, comparison: |p - y| = (p - y)(2c - 1) with c = [y < p].
   The organizers encrypt the L bits of the label, and c is a comparison tree
   of depth log2(L) against the clear bits of p. The NB pmf is unimodal, so
@@ -167,6 +168,17 @@ def r2_eval(he, ct_y, p):
     return he.cc.EvalAdd(he.cc.EvalMult(ct_y, he.pt(-2 * p)), he.pt(p ** 2))
 
 
+def nll_uncapped_eval(he, ct_y, ct_gl1, ct_b, a, mu, r):
+    """Enc(nll) per slot, linear in y, gammaln(y + 1) and the b_k(y)."""
+    cc = he.cc
+    nll = cc.EvalAdd(cc.EvalMult(ct_y, he.pt(np.log1p(r / mu))),
+                     he.pt(r * np.log1p(mu / r)))
+    nll = cc.EvalAdd(nll, ct_gl1)
+    for k, ct in enumerate(ct_b):
+        nll = cc.EvalAdd(nll, cc.EvalMult(ct, he.pt(-a[:, k])))
+    return nll
+
+
 def nll_eval(he, ct_bits, ct_gl1, ct_b, a, mu, r, lo, hi):
     """Enc(min(nll, cap)) per slot, with nll <= cap iff lo <= y <= hi."""
     cc, n_bits = he.cc, len(ct_bits)
@@ -243,6 +255,19 @@ def bench_nll(y, mu, r):
           f", max |g error| {np.abs(g - g_exact(y, r)).max():.1e} nats, cap "
           f"mismatches {(inside != (exact_nll <= NLL_CAP)).sum()}, clear "
           f"features {t_clear * 1e6 / len(y):.0f} us/value")
+    print(f"  uncapped NLL {exact_nll.mean():.6g}, max per value "
+          f"{exact_nll.max():.3g}")
+
+    # Depth 2 leaves room for the large intermediate terms a_k b_k.
+    he = HE(depth=2)
+    sl = slice(0, he.slots)
+    t_enc, cts = timed(he.encrypt, y[sl], gammaln(y[sl] + 1), *b[sl].T,
+                       reps=1)
+    t_eval, ct = timed(nll_uncapped_eval, he, cts[0], cts[1], cts[2:], a[sl],
+                       mu[sl], r[sl])
+    n = len(y[sl])
+    report("low rank, uncapped", he, n, t_enc, t_eval, cts,
+           he.decrypt(ct, n).mean(), approx_nll[sl].mean())
 
     he = HE(depth=int(np.ceil(np.log2(n_bits))) + 3)
     sl = slice(0, he.slots)

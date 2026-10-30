@@ -48,22 +48,45 @@ encrypted part, "labels" is the size of the encrypted labels.
 
 | Score | Route | Score error | Eval (us/value) | Encrypt (us/value) | Labels (KB/value) |
 | --- | --- | --- | --- | --- | --- |
-| R2 | linear | 2e-13 | 1.7 | 1.4 | 0.10 |
-| NB NLL capped at 100, rank 16, L = 17 | low rank and comparison | 2e-7 | 735 | 111 | 10.9 |
-| MAE, L = 12 | comparison | 1e-6 | 212 | 38 | 3.8 |
-| MAE, L = 16 | comparison | 6e-9 | 284 | 49 | 4.9 |
-| MAE, L = 20 | comparison | 9e-12 | 389 | 66 | 6.7 |
+| R2 | linear | 2e-13 | 1.6 | 1.4 | 0.10 |
+| NB NLL, rank 16 | low rank | 9e-9 | 22 | 31 | 2.3 |
+| NB NLL capped at 100, rank 16, L = 17 | low rank and comparison | 6e-8 | 766 | 113 | 10.9 |
+| MAE, L = 12 | comparison | 1e-6 | 221 | 38 | 3.8 |
+| MAE, L = 16 | comparison | 6e-9 | 297 | 52 | 4.9 |
+| MAE, L = 20 | comparison | 9e-12 | 407 | 67 | 6.7 |
 
 The score error is relative, and it includes both the approximation and the
 CKKS noise. For the NLL, the rank-16 approximation of gammaln(y + r) is off by
 at most 2e-6 nats, and the cap interval matches the exact capped loss on all
-values. Most of the NLL cost comes from the two comparisons of the cap. The
-evaluator also spends 20 us/value in the clear, to compute the prediction
-features and the cap interval. For comparison, a float64 label takes 0.008 KB.
+values. The evaluator also spends 20 us/value in the clear, to compute the
+prediction features and the cap interval. For comparison, a float64 label
+takes 0.008 KB.
 
 As a rule of thumb, 1M values cost about 2 s on one core on the linear
-route, 3.5 to 6.5 min for the MAE, and 12 min for the capped NLL. The
-ciphertexts are independent, so the time divides by the number of cores.
+route, 20 s for the uncapped NLL, 3.5 to 7 min for the MAE, and 13 min for
+the capped NLL. The ciphertexts are independent, so the time divides by the
+number of cores.
+
+## Bounding a loss without a cap
+
+The cap makes the NLL 35 times slower, because it needs two comparisons.
+Without it, the NB NLL is linear in y, gammaln(y + 1) and the 16 features
+b_k(y), so it stays on the low-rank route. Bounding the predictions instead of
+the loss keeps this cheap route:
+
+- For the log loss, clipping the predicted probabilities to [eps, 1 - eps]
+  bounds each term by -log(eps). It needs no comparison at all.
+- For the NB NLL, clipping the mean to mu >= mu_min and the dispersion to a
+  fixed range also bounds the loss, with no comparison. The bound grows with
+  the count, though, like y log(y / mu_min). A lower bound on mu tames the
+  worst case, a highly expressed gene predicted at mu near 0, but it does not
+  give a fixed bound like 100 nats.
+- If the cap only has to catch that case, a one-sided cap y <= hi halves the
+  comparison cost.
+
+On the synthetic data, the largest per-value NLL is 53 nats, so the cap never
+triggers. Whether a cap is needed depends on how bad the worst submissions
+are on the real data.
 
 ## Which route for which metric
 
@@ -77,7 +100,7 @@ ciphertexts are independent, so the time divides by the number of cores.
 | ROC AUC with binary labels, NDCG | linear | The ranks come from the clear predictions. AUC is a sum of the ranks of the positives, and the ideal DCG only depends on the labels. |
 | Pearson and Spearman correlations | linear | The organizers encrypt y, or the ranks of y. |
 | Per-group or weighted averages, slices | linear | Clear group masks or weights multiply the per-value terms. With a hidden group, encrypt y times the one-hot group. |
-| Negative-Binomial NLL | low rank | gammaln(y + r) is close to a sum of 16 separable terms. |
+| Negative-Binomial NLL | low rank | gammaln(y + r) is close to a sum of 16 separable terms. A cap on the loss adds two comparisons. |
 | Student-t NLL with a predicted degree of freedom, Gaussian CRPS | low rank | Check the rank with an SVD on the prediction and label ranges first. |
 | MAE, MAPE, pinball and Huber losses | comparison | One comparison gives the sign of p - y. MAPE also needs 1/y as a label feature. |
 | Capped or clipped losses | comparison | With a unimodal loss, the cap is a label interval that the evaluator computes from the prediction. |
