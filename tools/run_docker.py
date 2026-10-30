@@ -39,8 +39,8 @@ if __name__ == "__main__":
                         tag=image)
 
     phase = REPO / "phases/main/input_data"
-    out = REPO / "ingestion_res"
-    out.mkdir(exist_ok=True)
+    out = REPO / "_codabench/ingestion"
+    out.mkdir(parents=True, exist_ok=True)
     print("Running ingestion...")
     logs = client.containers.run(
         image=image, remove=True, name="ingestion", user="root",
@@ -48,6 +48,8 @@ if __name__ == "__main__":
         volumes=[
             f"{phase}:/app/input_data",
             f"{REPO / 'benchmark'}:/app/input_data/benchmark:ro",
+            # Target of the benchmark's solvers/submission.py symlink.
+            f"{REPO / 'solution'}:/app/input_data/solution:ro",
             f"{args.submission}:/app/ingested_program",
             f"{out}:/app/output",
             f"{args.data}:/app/data:ro",
@@ -55,8 +57,8 @@ if __name__ == "__main__":
     )
     print(logs.decode("utf-8"))
 
-    score = REPO / "scoring_res"
-    score.mkdir(exist_ok=True)
+    score = REPO / "_codabench/scoring"
+    score.mkdir(parents=True, exist_ok=True)
     print("Running scoring...")
     logs = client.containers.run(
         image=image, remove=True, name="scoring", user="root",

@@ -12,6 +12,8 @@ from ``meta["submission_dir"]``. Participants implement:
 
 The trained model must expose ``model.predict(X) -> ndarray (n_samples,)``.
 
+This contract is an example: design the one your challenge needs, as any
+benchopt solver works (https://benchopt.github.io/stable/user_guide/).
 Adapt: the arguments of ``set_objective`` / ``fit`` follow
 ``Objective.get_objective``, and the ``predict`` contract follows
 ``Objective.evaluate_result``.
@@ -37,6 +39,7 @@ class CompetSolver(BaseSolver):
     def set_objective(self, X_train, y_train):
         self.X_train = X_train
         self.y_train = y_train
+        # Lets a submission load extra files (weights, configs) next to it.
         submission_dir = Path(inspect.getfile(type(self))).parent
         self.model = self.get_model({"submission_dir": submission_dir})
 

@@ -17,7 +17,7 @@ scoring programs are thin wrappers around it.
 | `benchmark/datasets/real.py` | the real data: `prepare()` builds the splits, `get_data()` loads them |
 | `benchmark/datasets/simulated.py` | synthetic data with the same keys, for smoke tests and CI |
 | `benchmark/benchmark_utils/base_solver.py` | the submission contract (`CompetSolver`) |
-| `benchmark/solvers/` | built-in baselines (here a `Dummy` floor) |
+| `benchmark/solvers/` | built-in baselines (a `Dummy` floor, and a symlink to the sample submission) |
 | `solution/submission.py` | the sample submission participants start from |
 | `ingestion_program/` | runs `benchopt run` on a submission |
 | `scoring_program/` | turns the benchopt results into `scores.json` |
@@ -46,6 +46,10 @@ In this order, since each step builds on the previous one:
    `requirements.txt`, build and push the image from `tools/Dockerfile`, and
    set `docker_image` in `competition.yaml`.
 7. **Pages, dates and quotas** in `pages/` and `competition.yaml`.
+8. **Explain the evaluation.** The starting kit notebook (with an EDA) and the
+   Participate page must make every evaluation choice crystal clear: why the
+   problem matters, the choice of the metric, the choice of the split, and
+   the evidence that it does not leak.
 
 ## Running locally
 
@@ -78,14 +82,15 @@ Point `BENCHOPT_DATA_HOME` at the prepared data: the bundled benchmark
 otherwise looks for it in its own `data/` folder.
 
 ```bash
-python -c "import zipfile; zipfile.ZipFile('bundle.zip').extractall('_bundle')"
+python -c "import zipfile; zipfile.ZipFile('bundle.zip').extractall('_codabench/bundle')"
 export BENCHOPT_DATA_HOME=$PWD/benchmark/data
-python _bundle/ingestion_program/ingestion.py \
-    --submission-dir _bundle/solution \
-    --input-data _bundle/main_phase/input_data --output-dir ingestion_res
-python _bundle/scoring_program/scoring.py \
-    --prediction-dir ingestion_res --output-dir scoring_res
-cat scoring_res/scores.json
+python _codabench/bundle/ingestion_program/ingestion.py \
+    --submission-dir _codabench/bundle/solution \
+    --input-data _codabench/bundle/main_phase/input_data \
+    --output-dir _codabench/ingestion
+python _codabench/bundle/scoring_program/scoring.py \
+    --prediction-dir _codabench/ingestion --output-dir _codabench/scoring
+cat _codabench/scoring/scores.json
 ```
 
 `python tools/run_docker.py` does the same inside the Docker image (needs

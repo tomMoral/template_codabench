@@ -29,6 +29,8 @@ def main(prediction_dir, output_dir):
                              f"key {key!r}) is missing or NaN.")
         scores[key] = value
 
+    # benchopt times the solver's run (training), ingestion the whole run.
+    scores["train_time"] = float(df["time"].iloc[0])
     scores["duration"] = json.loads(
         (prediction_dir / "metadata.json").read_text())["duration"]
 

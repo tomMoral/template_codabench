@@ -37,18 +37,18 @@ jobs:
       - name: Build bundle + end-to-end ingestion + scoring (Simulated)
         run: |
           python tools/create_bundle.py
-          python -c "import zipfile; zipfile.ZipFile('bundle.zip').extractall('_bundle')"
+          python -c "import zipfile; zipfile.ZipFile('bundle.zip').extractall('_codabench/bundle')"
           # No real data in CI: run the phase on the Simulated dataset.
-          sed -i 's/- Real/- Simulated/' _bundle/main_phase/input_data/config.yaml
-          python _bundle/ingestion_program/ingestion.py \
-            --submission-dir _bundle/solution \
-            --input-data _bundle/main_phase/input_data \
-            --output-dir ingestion_res
-          python _bundle/scoring_program/scoring.py \
-            --prediction-dir ingestion_res \
-            --output-dir scoring_res
-          python -c "import json; s=json.load(open('scoring_res/scores.json')); \
-            keys={'accuracy','accuracy_private','duration'}; \
+          sed -i 's/- Real/- Simulated/' _codabench/bundle/main_phase/input_data/config.yaml
+          python _codabench/bundle/ingestion_program/ingestion.py \
+            --submission-dir _codabench/bundle/solution \
+            --input-data _codabench/bundle/main_phase/input_data \
+            --output-dir _codabench/ingestion
+          python _codabench/bundle/scoring_program/scoring.py \
+            --prediction-dir _codabench/ingestion \
+            --output-dir _codabench/scoring
+          python -c "import json; s=json.load(open('_codabench/scoring/scores.json')); \
+            keys={'accuracy','accuracy_private','train_time','duration'}; \
             assert keys <= set(s), s; print('scores OK:', s)"
 
   docker:

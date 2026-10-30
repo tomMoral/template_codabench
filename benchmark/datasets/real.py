@@ -11,6 +11,12 @@ of your raw data, and cut the split the way your evaluation protocol needs
 (groups, time, held-out sites...). Write the ``private`` split only where its
 raw source is available (the worker), so the public starting kit cannot
 produce it.
+
+For a cross-validated protocol, cut the folds in ``get_data`` from
+``self.get_seed(use_repetition=True)``, as ``Simulated`` does, set
+``n_repetitions`` in the phase config and average the repetitions in the
+scoring program. See benchopt's seeding guide:
+https://benchopt.github.io/stable/user_guide/controlling_randomness.html
 """
 
 import pandas as pd
@@ -41,8 +47,8 @@ class Dataset(BaseDataset):
     def get_data(self):
         root = get_data_path("real")
         if not (root / "train.csv").exists():
-            # prepare's cache does not check its output: --force if the
-            # data was deleted or BENCHOPT_DATA_HOME changed.
+            # Fail if the data has not been prepared. Use --force to bypass
+            # an eventual cache.
             raise SystemExit(f"[Real] no data at {root}. Run "
                              "`benchopt prepare benchmark -d Real --force`.")
 

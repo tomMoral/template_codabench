@@ -9,6 +9,4 @@ __cache__/
 # local data home (benchopt prepare output)
 data/
 # local bundle / ingestion / scoring test runs
-_bundle/
-ingestion_res/
-scoring_res/
+_codabench/
