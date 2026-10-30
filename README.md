@@ -11,8 +11,8 @@ on a public and a private test set.
 scoring programs are thin wrappers around it:
 
 - **Ingestion** runs the benchmark on a submission. Each repetition trains it
-  on one CV fold, scores it on the held-out part of the fold (a scalar
-  result), and keeps its predictions on the test sets.
+  on one CV fold, scores it on the held-out part of the fold, and returns
+  its predictions on the test sets.
 - **Scoring** scores these predictions against the test labels, which only it
   can read (the phase `reference_data`), and averages every score over the
   folds.

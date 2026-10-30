@@ -1,11 +1,12 @@
 """Scoring program for the competition.
 
 The ingestion run cross-validates the submission, one fold per repetition.
-Each row of ``results.parquet`` holds the fold's scalar metrics
-(``objective_*``) and, in ``final_results``, the fold model's predictions on
-each test set. This program scores the predictions against the labels of the
-phase ``reference_data`` (one ``<test set>.csv`` with a ``target`` column per
-test set), and averages every score over the folds into ``scores.json``:
+Each row of ``results.parquet`` holds the fold's metrics (``objective_*``)
+and the fold model's predictions on each test set
+(``objective_<test set>_pred``). This program scores the predictions against
+the labels of the phase ``reference_data`` (one ``<test set>.csv`` with a
+``target`` column per test set), and averages every score over the folds
+into ``scores.json``:
 ``accuracy_<test set>``, the objective's metrics (``accuracy_cv``),
 ``train_time`` and ``duration``.
 
@@ -31,7 +32,8 @@ def main(prediction_dir, reference_dir, output_dir):
     for ref in sorted(reference_dir.glob("*.csv")):
         y_true = pd.read_csv(ref)["target"]
         scores[f"{METRIC_NAME}_{ref.stem}"] = np.mean(
-            [METRIC(y_true, pred[ref.stem]) for pred in df["final_results"]])
+            [METRIC(y_true, pred)
+             for pred in df[f"objective_{ref.stem}_pred"]])
     metrics = df.select_dtypes("number").filter(regex="^objective_")
     for col, value in metrics.mean().items():
         scores[col.removeprefix("objective_")] = value
