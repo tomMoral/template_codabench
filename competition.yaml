@@ -8,10 +8,10 @@ description: >
 image: logo.png
 registration_auto_approve: False
 
-# The image submissions run in: built from tools/Dockerfile, it carries the
-# requirements.txt stack. The benchmark and the prepared data ship in
-# the phase input_data.
-docker_image: <dockerhub-user>/<competition>:v1
+# The image submissions run in: the base image, or your own built from
+# tools/Dockerfile when requirements.txt adds packages. The benchmark and the
+# prepared data ship in the phase input_data.
+docker_image: ghcr.io/x-datascience-datacamp/codabench-benchopt:latest
 
 # Only the leaderboard metrics are exposed.
 enable_detailed_results: False
@@ -53,21 +53,21 @@ phases:
     end: 2027-03-31 23:59:59
     execution_time_limit: 600
     max_submissions_per_day: 5
-    # results.parquet and scores.json carry the hidden private metrics.
+    # Keep the test predictions and the hidden private metric private.
     hide_prediction_output: True
     hide_score_output: True
     tasks:
       - 0
 
-# Column keys must match the keys of phases/main/input_data/config.yaml
-# (scoring.columns), plus `train_time` and `duration` added by the scoring
-# program.
+# Column keys are those of scores.json (scoring program): <metric>_<test set>
+# for each test set of the reference data, the objective's metrics averaged
+# over the CV folds, and train_time (mean per fold) and duration.
 leaderboards:
   - title: Results
     key: main
     columns:
       - title: Accuracy (public)
-        key: accuracy
+        key: accuracy_public
         index: 0
         sorting: desc
       - title: Accuracy (private)
@@ -75,11 +75,15 @@ leaderboards:
         index: 1
         sorting: desc
         hidden: True
+      - title: Accuracy (CV)
+        key: accuracy_cv
+        index: 2
+        sorting: desc
       - title: Train time (s)
         key: train_time
-        index: 2
+        index: 3
         sorting: asc
       - title: Duration (s)
         key: duration
-        index: 3
+        index: 4
         sorting: asc

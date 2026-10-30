@@ -3,11 +3,19 @@
 This repository is a template to create a machine-learning competition on
 [Codabench](https://www.codabench.org) whose evaluation is a
 [benchopt](https://benchopt.github.io) benchmark. It sets up a dummy binary
-classification task, scored by accuracy on a public and a private test set.
+classification task, scored by accuracy with 5-fold cross-validation (CV) and
+on a public and a private test set.
 
 **The benchmark is the competition.** Participants run locally, with
 `benchopt run`, exactly the code the server runs. The Codabench ingestion and
-scoring programs are thin wrappers around it.
+scoring programs are thin wrappers around it:
+
+- **Ingestion** runs the benchmark on a submission. Each repetition trains it
+  on one CV fold, scores it on the held-out part of the fold (a scalar
+  result), and keeps its predictions on the test sets.
+- **Scoring** scores these predictions against the test labels, which only it
+  can read (the phase `reference_data`), and averages every score over the
+  folds.
 
 <!-- BEGIN DataCamp course section. Delete up to END for a general release. -->
 ## DataCamp course: instructions and grading
@@ -36,13 +44,14 @@ To hand in:
 - **Codabench documentation**: <https://docs.codabench.org>, in particular the
   [competition bundle](https://docs.codabench.org/latest/Organizers/Benchmark_Creation/Competition-Bundle-Structure/)
   page.
-- **AI agent skills**, in [`.agents/skills/`](.agents/skills/) (mirrored in
-  `.claude/skills/` for Claude Code). Coding agents (Claude Code, Codex,
-  Copilot, Cursor, Gemini CLI...) load them when you open the repository.
-  They are plain Markdown, so you can also read them yourself.
-  - [`using-benchopt`](.agents/skills/using-benchopt/SKILL.md): writing and
-    running benchopt datasets, objectives and solvers. Refresh it after a
-    benchopt upgrade with `benchopt sync-skills . --no-claude`.
+- **AI agent skills**, in `.agents/skills/` (mirrored in `.claude/skills/`
+  for Claude Code). Coding agents (Claude Code, Codex, Copilot, Cursor,
+  Gemini CLI...) load them when you open the repository. They are plain
+  Markdown, so you can also read them yourself.
+  - `using-benchopt`: writing and running benchopt datasets, objectives and
+    solvers. It ships with benchopt and matches your installed version:
+    install it with `benchopt sync-skills` from the repository root, and
+    re-run it after a benchopt upgrade.
   - [`codabench-benchopt`](.agents/skills/codabench-benchopt/SKILL.md):
     designing a benchopt-powered Codabench competition. Read
     [`data-and-splits.md`](.agents/skills/codabench-benchopt/data-and-splits.md)
@@ -54,16 +63,16 @@ To hand in:
 | Path | Content |
 |---|---|
 | `template_starting_kit.ipynb` | skeleton of the participants' starting kit, with the EDA and the evaluation |
-| `benchmark/objective.py` | the task: what the solver receives, and the metric |
+| `benchmark/objective.py` | the task: what the solver receives, the CV scheme and the metric |
 | `benchmark/datasets/real.py` | the real data: `prepare()` builds the splits, `get_data()` loads them |
 | `benchmark/datasets/simulated.py` | synthetic data with the same keys, for smoke tests and CI |
 | `benchmark/benchmark_utils/base_solver.py` | the submission contract (`CompetSolver`) |
 | `benchmark/solvers/` | built-in baselines: a `Dummy` floor, and `random-forest.py`, the sample submission participants start from |
 | `ingestion_program/` | runs `benchopt run` on a submission |
-| `scoring_program/` | turns the benchopt results into `scores.json` |
-| `phases/main/input_data/config.yaml` | the phase: benchopt run config + leaderboard column map |
+| `scoring_program/` | scores the test predictions against the labels, averages over the folds into `scores.json` |
+| `phases/main/input_data/config.yaml` | the phase: benchopt run config (dataset, seed, one CV fold per repetition) |
 | `competition.yaml`, `pages/` | the Codabench competition and its pages |
-| `tools/` | bundle builder, Docker image, local Docker run |
+| `tools/` | bundle builder, base and competition Docker images, local Docker run |
 | `.agents/skills/` | the AI agent skills above |
 
 ## What the starting kit must show
@@ -91,25 +100,30 @@ In this order, since each step builds on the previous one:
    notebook to `<challenge>_starting_kit.ipynb` and fill in its introduction.
 2. **EDA.** Explore the data in the notebook. Look for the structure that
    decides the split: groups (patients, sites, subjects), time, duplicates.
-3. **Evaluation protocol.** From the EDA, choose the metric and how the data
-   is split (random, by group, by time...), and what separates the public
-   from the private test set.
+3. **Evaluation protocol.** From the EDA, choose the metric, the CV scheme
+   (stratified, by group, by time...), and how the test sets are cut and what
+   separates the public from the private one.
 4. **Data in the benchmark.** Rewrite `Real.prepare()` to fetch or convert
-   your raw data and cut the splits, and `Real.get_data()` to load them. Make
-   `Simulated` return the same keys and test subsets.
-5. **Task and metric.** Adapt `Objective.set_data`, `get_objective` and
-   `evaluate_result`. Metrics come out as `objective_<metric>_<subset>`.
+   your raw data, cut the test sets and write their labels apart (they become
+   the phase `reference_data`), and `Real.get_data()` to load the rest. Make
+   `Simulated` return the same keys and types.
+5. **Task, CV and metric.** Adapt `Objective.set_data` (data and `cv`),
+   `get_objective` and `evaluate_result`, and set `n_repetitions` in
+   `phases/main/input_data/config.yaml` to the number of folds. Use the same
+   metric in `METRIC` of `scoring_program/scoring.py`.
 6. **Submission contract.** Adapt `CompetSolver` to what `get_objective`
    returns, then the `Dummy` floor and the sample `random-forest.py`.
 7. **Evaluation evidence.** Fill the notebook's evaluation section: leakage
-   checks, baseline scores on public and private, and the noise of the public
-   score.
-8. **Phase and leaderboard.** Map the leaderboard keys to the objective's
-   columns in `phases/main/input_data/config.yaml`, and declare the same keys
-   in `competition.yaml` (`hidden: True` for the private ones).
-9. **Environment.** List everything submissions may import in
-   `requirements.txt`, build and push the image from `tools/Dockerfile`, and
-   set `docker_image` in `competition.yaml`.
+   checks, and baseline scores in CV, public and private, with their spread
+   over the folds.
+8. **Leaderboard.** Declare the keys of `scores.json` in `competition.yaml`
+   (`hidden: True` for the private ones).
+9. **Environment.** The default image,
+   `ghcr.io/x-datascience-datacamp/codabench-benchopt`, has benchopt,
+   pandas, scikit-learn and torch (CPU). If submissions need more, list it in
+   `requirements.txt`, build and push your image from `tools/Dockerfile`, and
+   set `docker_image` in `competition.yaml`. `codabench-benchopt-gpu` is the
+   CUDA variant, for a self-hosted GPU worker.
 10. **Pages, dates and quotas** in `pages/` and `competition.yaml`. The
     Participate page summarizes the notebook.
 
@@ -117,8 +131,8 @@ In this order, since each step builds on the previous one:
 
 - [ ] The starting kit covers the three points of
       [What the starting kit must show](#what-the-starting-kit-must-show).
-- [ ] `Dummy` and the sample submission are scored on public and private,
-      and the sample submission clearly beats `Dummy`.
+- [ ] `Dummy` and the sample submission are scored in CV, public and
+      private, and the sample submission clearly beats `Dummy`.
 - [ ] The split has a leakage check in the notebook.
 - [ ] CI is green.
 - [ ] `bundle.zip` uploads on Codabench and scores the sample submission.
@@ -130,10 +144,10 @@ In this order, since each step builds on the previous one:
 ```bash
 pip install -r requirements.txt
 benchopt test benchmark --skip-install                  # design checks
-benchopt run benchmark -d Simulated -s Dummy -s RandomForest
+benchopt run benchmark -d Simulated -s Dummy -s RandomForest -r 5
 
 benchopt prepare benchmark -d Real
-benchopt run benchmark -d Real -s RandomForest
+benchopt run benchmark -d Real -s RandomForest -r 5        # 5 CV folds
 ```
 
 The data goes to `$BENCHOPT_DATA_HOME` (default: `benchmark/data`).
@@ -148,19 +162,18 @@ python tools/create_bundle.py        # -> bundle.zip, to upload on Codabench
 ```
 
 The bundle carries the competition config, the pages, the programs, the
-sample submission and the phase `input_data`: its config, the benchmark and
-the prepared data (`$BENCHOPT_DATA_HOME`, default `benchmark/data`). A
-benchmark or data change is a new upload of the phase, not an image rebuild.
-It runs on Codabench's default compute workers, so you need no server of
-your own.
+sample submission and the phase data, from `$BENCHOPT_DATA_HOME` (default
+`benchmark/data`):
 
-Two things to know about data in `input_data`:
+- `input_data`: the config, the benchmark and the prepared data, without the
+  test labels. Submissions run with it.
+- `reference_data`: the test labels (the `reference/` folder written by
+  `prepare`). Only the scoring program reads it.
 
-- **Size.** Keep the prepared data small (tens of MB). Prepare a compact
-  format (Parquet, `.npz`) rather than shipping raw files.
-- **Submissions can read it**, private split included, since they run in
-  the same process that evaluates them. The private labels are therefore
-  protected by the terms (accessing them is cheating), not by the platform.
+A benchmark or data change is a new upload of the phase, not an image
+rebuild. It runs on Codabench's default compute workers, so you need no
+server of your own. Keep the prepared data small (tens of MB), in a compact
+format (Parquet, `.npz`) rather than raw files.
 
 To run the platform path locally, extract the bundle and run its programs:
 
@@ -171,7 +184,9 @@ python _codabench/bundle/ingestion_program/ingestion.py \
     --input-data _codabench/bundle/main_phase/input_data \
     --output-dir _codabench/ingestion
 python _codabench/bundle/scoring_program/scoring.py \
-    --prediction-dir _codabench/ingestion --output-dir _codabench/scoring
+    --prediction-dir _codabench/ingestion \
+    --reference-dir _codabench/bundle/main_phase/reference_data \
+    --output-dir _codabench/scoring
 cat _codabench/scoring/scores.json
 ```
 
@@ -180,14 +195,14 @@ cat _codabench/scoring/scores.json
 
 ## Large data: staging it on a self-hosted worker
 
-Data too large for the bundle, or a private split that must stay out of the
-submissions' reach, needs a
+Data too large for the bundle needs a
 [self-hosted compute worker](https://docs.codabench.org/latest/Organizers/Running_a_benchmark/Compute-Worker-Management---Setup/)
 attached to a private queue. Delete `main_phase/input_data/data/` from the
-bundle: ingestion then reads the data from `/app/data`, where the worker
-mounts it read-only. Prepare it once, with the image, from the phase
-`input_data` of the bundle, so that what is staged and what submissions run
-come from the same files:
+bundle and keep its `reference_data`: ingestion then reads the data from
+`/app/data`, where the worker mounts it read-only. Prepare it once, with the
+image, from the phase `input_data` of the bundle, so that what is staged and
+what submissions run come from the same files. Then delete the staged
+`reference/` folder, which submissions could read:
 
 ```bash
 docker run -e BENCHOPT_CACHE=/tmp/benchopt -v <host-data>:/app/data \
@@ -205,5 +220,10 @@ still writes fails there rather than on every submission.
 
 `.github/workflows/test.yml` lints, runs `benchopt test`, smoke-runs the
 baselines on `Simulated`, then builds the bundle and runs its ingestion and
-scoring end to end on `Simulated` (CI has no real data), and builds the
-Docker image.
+scoring end to end on `Real`, and builds the Docker image on the CPU base
+image. If your data cannot be prepared in CI, run the end-to-end step on
+`Simulated`, which has no test labels.
+
+`.github/workflows/images.yml` builds and pushes the base images
+`codabench-benchopt` and `codabench-benchopt-gpu` from
+`tools/Dockerfile.base` to the GitHub container registry.

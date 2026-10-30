@@ -1,5 +1,5 @@
 # CI: lint + benchopt design tests + a native end-to-end ingestion/scoring
-# run on the Simulated dataset, plus a Docker image build.
+# run on the Real dataset, plus a Docker image build.
 name: Test
 
 on:
@@ -33,40 +33,33 @@ jobs:
       - name: Smoke run on Simulated
         run: |
           benchopt run benchmark -d Simulated -s Dummy -s RandomForest \
-            -r 1 --no-cache --no-plot --no-html --no-display
-      - name: Build bundle + end-to-end ingestion + scoring (Simulated)
+            -r 5 --no-cache --no-plot --no-html --no-display
+      - name: Build bundle + end-to-end ingestion + scoring (Real)
+        # The template's stand-in data ships with scikit-learn. If your data
+        # cannot be prepared in CI, run this step on Simulated instead: it
+        # has no test labels, so only the CV score is checked.
         run: |
+          benchopt prepare benchmark -d Real
           python tools/create_bundle.py
           python -c "import zipfile; zipfile.ZipFile('bundle.zip').extractall('_codabench/bundle')"
-          # No real data in CI: run the phase on the Simulated dataset.
-          sed -i 's/- Real/- Simulated/' _codabench/bundle/main_phase/input_data/config.yaml
           python _codabench/bundle/ingestion_program/ingestion.py \
             --submission-dir _codabench/bundle/solution \
             --input-data _codabench/bundle/main_phase/input_data \
             --output-dir _codabench/ingestion
           python _codabench/bundle/scoring_program/scoring.py \
             --prediction-dir _codabench/ingestion \
+            --reference-dir _codabench/bundle/main_phase/reference_data \
             --output-dir _codabench/scoring
-          python -c "import json; s=json.load(open('_codabench/scoring/scores.json')); \
-            keys={'accuracy','accuracy_private','train_time','duration'}; \
-            assert keys <= set(s), s; print('scores OK:', s)"
+          python -c "import json, yaml; s=json.load(open('_codabench/scoring/scores.json')); \
+            keys={c['key'] for b in yaml.safe_load(open('competition.yaml'))['leaderboards'] for c in b['columns']}; \
+            assert keys <= set(s), (keys, s); print('scores OK:', s)"
 
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Free disk space
+      - name: Build the CPU base image and the competition image on top
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
-          sudo rm -rf /usr/local/.ghcup || true
-      - uses: docker/setup-buildx-action@v3
-      - name: Build image (CPU torch, build-only)
-        uses: docker/build-push-action@v6
-        with:
-          file: ./tools/Dockerfile
-          push: false
-          load: false
-          build-args: TORCH_CHANNEL=cpu
-          tags: codabench-compet-test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          docker build -f tools/Dockerfile.base -t codabench-benchopt-test .
+          docker build -f tools/Dockerfile -t codabench-compet-test \
+            --build-arg BASE=codabench-benchopt-test .

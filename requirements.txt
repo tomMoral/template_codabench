@@ -1,8 +1,8 @@
-# Dependencies for the ingestion + scoring programs and every submission
-# (the Docker image). The ingestion program runs the benchopt benchmark on the
-# submission, so it needs benchopt plus everything the benchmark and the
-# submissions import at run time. This is the participants' dependency
-# contract: no install happens at submission time.
+# Dependencies of the competition: the ingestion and scoring programs, the
+# benchmark and every submission. No install happens at submission time, so
+# this is the participants' dependency contract. The base image
+# (tools/Dockerfile.base) already has these and torch: add what your
+# challenge needs, and tools/Dockerfile installs it on top.
 benchopt>=1.10
 pandas
 scikit-learn

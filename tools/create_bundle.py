@@ -4,9 +4,11 @@ The bundle ships the competition config, the pages, the sample submission, the
 ingestion/scoring programs, and the phase directory as ``main_phase``: its
 ``input_data`` holds the phase ``config.yaml``, the benchopt **benchmark**
 (a benchmark change needs no image rebuild) and the prepared **data** from
-``$BENCHOPT_DATA_HOME`` (default ``benchmark/data``), as ``data/``. Run
-``benchopt prepare`` first. For data too large for the bundle, staged on a
-self-hosted worker instead, delete ``data/`` from the bundle.
+``$BENCHOPT_DATA_HOME`` (default ``benchmark/data``), as ``data/``. Its
+``reference/`` folder, the test labels, goes to ``reference_data`` instead,
+which only the scoring program reads. Run ``benchopt prepare`` first. For
+data too large for the bundle, staged on a self-hosted worker instead,
+delete ``input_data/data/`` from the bundle.
 
 Usage
 -----
@@ -66,10 +68,12 @@ def build_bundle():
                   "main_phase/input_data/config.yaml")
         _add_dir(bundle, ROOT_DIR / "benchmark",
                  "main_phase/input_data/benchmark")
-        if DATA_DIR.is_dir():
-            _add_dir(bundle, DATA_DIR, "main_phase/input_data/data")
-        else:
+        if not DATA_DIR.is_dir():
             print(f"No prepared data at {DATA_DIR}: run `benchopt prepare`.")
+        for d in sorted(DATA_DIR.glob("*/")):
+            phase_dir = "reference_data" if d.name == "reference" else (
+                f"input_data/data/{d.name}")
+            _add_dir(bundle, d, f"main_phase/{phase_dir}")
         _add_dir(bundle, ROOT_DIR / "phases/reference_data",
                  "main_phase/reference_data")
     print(f"-> {out.name}")

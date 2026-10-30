@@ -1,9 +1,9 @@
 """Build the image and run ingestion + scoring in it (local platform test).
 
-Mirrors the platform layout: the phase directory (run config) and the
-benchmark are mounted as ``/app/input_data``, a submission as
-``/app/ingested_program``, and the prepared data as ``/app/data``
-(read-only). Prepare the data first with
+Mirrors the platform layout: the phase config, the benchmark and the
+prepared data are mounted as ``/app/input_data``, a submission as
+``/app/ingested_program``, the programs as ``/app/program``, and the test
+labels as ``/app/input/ref`` for scoring. Prepare the data first with
 ``benchopt prepare benchmark -d Real`` (writes ``benchmark/data``).
 
 Usage
@@ -27,11 +27,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Docker ingestion test")
     parser.add_argument("--data",
                         default=str(REPO / "benchmark/data"),
-                        help="Host data dir mounted read-only as /app/data")
+                        help="Prepared data dir (benchopt data home)")
     parser.add_argument("--submission",
                         help="Folder holding submission.py (default: the "
                         "sample benchmark/solvers/random-forest.py)")
     args = parser.parse_args()
+    data = Path(args.data).resolve()
 
     client = docker.from_env()
     image = "codabench-compet:dev"
@@ -51,13 +52,14 @@ if __name__ == "__main__":
     print("Running ingestion...")
     logs = client.containers.run(
         image=image, remove=True, name="ingestion", user="root",
-        command="python3 /compet/ingestion_program/ingestion.py",
+        command="python3 /app/program/ingestion.py",
         volumes=[
+            f"{REPO / 'ingestion_program'}:/app/program:ro",
             f"{phase}:/app/input_data",
             f"{REPO / 'benchmark'}:/app/input_data/benchmark:ro",
+            f"{data}:/app/input_data/data:ro",
             submission,
             f"{out}:/app/output",
-            f"{args.data}:/app/data:ro",
         ],
     )
     print(logs.decode("utf-8"))
@@ -67,9 +69,11 @@ if __name__ == "__main__":
     print("Running scoring...")
     logs = client.containers.run(
         image=image, remove=True, name="scoring", user="root",
-        command="python3 /compet/scoring_program/scoring.py",
+        command="python3 /app/program/scoring.py",
         volumes=[
+            f"{REPO / 'scoring_program'}:/app/program:ro",
             f"{out}:/app/input/res",
+            f"{data / 'reference'}:/app/input/ref:ro",
             f"{score}:/app/output",
         ],
     )

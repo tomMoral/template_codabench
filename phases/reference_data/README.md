@@ -1,6 +1,6 @@
 # Reference data
 
-Intentionally empty. All evaluation happens in the benchopt objective during
-the ingestion run; the scoring program only parses the results parquet (the
-metric is already computed). No ground-truth labels reach the scoring step —
-the labels live in the phase data the objective reads.
+The test labels, one `<test set>.csv` with a `target` column per test set.
+`benchopt prepare` writes them to `$BENCHOPT_DATA_HOME/reference`, and
+`tools/create_bundle.py` ships them here. Only the scoring program reads
+them: submissions never see them.

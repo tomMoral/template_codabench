@@ -10,3 +10,6 @@ __cache__/
 data/
 # local bundle / ingestion / scoring test runs
 _codabench/
+# installed by `benchopt sync-skills`, kept in sync with benchopt
+.agents/skills/using-benchopt
+.claude/skills/using-benchopt

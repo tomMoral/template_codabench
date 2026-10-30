@@ -1,41 +1,51 @@
 """Scoring program for the competition.
 
-All evaluation happens in the ingestion run; this only parses the raw
-benchopt results (``results.parquet``) into the flat ``scores.json`` the
-leaderboard consumes. The forwarded phase config's ``scoring.columns`` maps
-leaderboard keys to dataframe columns; a listed column that is missing or
-NaN fails loudly.
+The ingestion run cross-validates the submission, one fold per repetition.
+Each row of ``results.parquet`` holds the fold's scalar metrics
+(``objective_*``) and, in ``final_results``, the fold model's predictions on
+each test set. This program scores the predictions against the labels of the
+phase ``reference_data`` (one ``<test set>.csv`` with a ``target`` column per
+test set), and averages every score over the folds into ``scores.json``:
+``accuracy_<test set>``, the objective's metrics (``accuracy_cv``),
+``train_time`` and ``duration``.
+
+Adapt: ``METRIC`` to the objective's metric.
 """
 
 import json
-import math
 from pathlib import Path
 
-import yaml
+import numpy as np
+import pandas as pd
+from sklearn.metrics import accuracy_score
+
+METRIC_NAME, METRIC = "accuracy", accuracy_score
 
 
-def main(prediction_dir, output_dir):
+def main(prediction_dir, reference_dir, output_dir):
     from benchopt.results import read_results
 
     df = read_results(prediction_dir / "results.parquet")
-    config = yaml.safe_load((prediction_dir / "config.yaml").read_text())
-    columns = config["scoring"]["columns"]
 
     scores = {}
-    for key, col in columns.items():
-        value = float(df[col].iloc[0]) if col in df.columns else math.nan
-        if math.isnan(value):
-            raise SystemExit(f"[scoring] column {col!r} (leaderboard "
-                             f"key {key!r}) is missing or NaN.")
-        scores[key] = value
+    for ref in sorted(reference_dir.glob("*.csv")):
+        y_true = pd.read_csv(ref)["target"]
+        scores[f"{METRIC_NAME}_{ref.stem}"] = np.mean(
+            [METRIC(y_true, pred[ref.stem]) for pred in df["final_results"]])
+    metrics = df.select_dtypes("number").filter(regex="^objective_")
+    for col, value in metrics.mean().items():
+        scores[col.removeprefix("objective_")] = value
+    if not scores or np.isnan(list(scores.values())).any():
+        raise SystemExit(f"[scoring] missing or NaN scores: {list(scores)}")
 
     # benchopt times the solver's run (training), ingestion the whole run.
-    scores["train_time"] = float(df["time"].iloc[0])
+    scores["train_time"] = df["time"].mean()
     scores["duration"] = json.loads(
         (prediction_dir / "metadata.json").read_text())["duration"]
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "scores.json").write_text(json.dumps(scores))
+    (output_dir / "scores.json").write_text(
+        json.dumps({k: float(v) for k, v in scores.items()}))
     # Keys only: the log is shown to the submitter, values include hidden
     # private metrics.
     print(f"[scoring] wrote {', '.join(scores)} to scores.json")
@@ -46,7 +56,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Competition scoring")
     parser.add_argument("--prediction-dir", default="/app/input/res")
+    parser.add_argument("--reference-dir", default="/app/input/ref")
     parser.add_argument("--output-dir", default="/app/output")
     args = parser.parse_args()
 
-    main(Path(args.prediction_dir), Path(args.output_dir))
+    main(Path(args.prediction_dir), Path(args.reference_dir),
+         Path(args.output_dir))

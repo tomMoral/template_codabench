@@ -21,6 +21,12 @@ the use case. In this template: **accuracy** (higher is better).
 generalization it measures. If the test sets differ from the training set on
 purpose (new sites, later dates), say so.
 
+Your model is trained and scored with 5-fold cross-validation on the
+training data, then each fold's model predicts the test sets. Every score is
+averaged over the 5 folds.
+
+- **CV column**: the cross-validation score, the one you can reproduce
+  locally.
 - **Public column** (live feedback): a public test set.
 - **Private / final ranking** (hidden): a private test set. Do not overfit
   the public column.
@@ -49,7 +55,7 @@ class Solver(CompetSolver):
 ```
 
 Your trained model must expose `predict(X) -> ndarray (n_samples,)`. The
-platform **trains your code**, then evaluates it. Copy
+platform **trains your code**, once per fold, then evaluates it. Copy
 `benchmark/solvers/random-forest.py`, a working baseline, to
 `my_submission/submission.py`.
 
@@ -58,8 +64,10 @@ platform **trains your code**, then evaluates it. Copy
 ```bash
 pip install -r requirements.txt
 benchopt prepare benchmark -d Real
-benchopt run benchmark -d Real -s my_submission/submission.py
+benchopt run benchmark -d Real -s my_submission/submission.py -r 5
 ```
 
-The number you get locally on the public split is the number the leaderboard
-shows. The benchmark you run *is* the benchmark the server runs.
+The cross-validation score you get locally (`objective_accuracy_cv`,
+averaged over the 5 repetitions) is the CV column of the leaderboard. The
+benchmark you run *is* the benchmark the server runs. Select your models on
+it rather than on the public column.

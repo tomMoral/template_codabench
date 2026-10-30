@@ -1,11 +1,7 @@
-# Phase config — a native `benchopt run --config` file plus one competition
-# key (`scoring`) read by the scoring program and stripped by ingestion.
+# Phase config: a native `benchopt run --config` file.
 dataset:
   - Real
 seed: 42
+# One cross-validation fold per repetition: match the objective's n_splits.
+n_repetitions: 5
 no_timeout: true
-scoring:
-  # leaderboard key (competition.yaml) -> results column (objective output)
-  columns:
-    accuracy: objective_accuracy_public
-    accuracy_private: objective_accuracy_private

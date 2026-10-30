@@ -1,18 +1,25 @@
 """Objective: what a submission is evaluated on, and how.
 
 This template's task is a binary classification scored by accuracy. The
-solver gets the training data, trains its model (on the platform), and the
-objective scores the trained model on each held-out subset: ``public``
-(shown live on the leaderboard) and ``private`` (hidden, final ranking).
-Metrics are emitted per subset as ``objective_<metric>_<subset>``; the phase
-config maps them to leaderboard keys.
+objective cross-validates the solver on the training data, one fold per
+repetition (run with ``n_repetitions`` equal to the number of folds): the
+solver trains on the fold's training part, and ``evaluate_result`` scores it
+on the held-out part (``objective_accuracy_cv``).
 
-Adapt: ``set_data`` / ``get_objective`` to your data, ``evaluate_result`` to
-your metric.
+The test sets come without labels. ``save_final_results`` returns the
+predictions of each fold's model on them, and the scoring program scores
+these against the labels of the phase ``reference_data``, then averages over
+the folds.
+
+Adapt: ``set_data`` / ``get_objective`` to your data, ``cv`` to your
+evaluation protocol (e.g. ``GroupKFold`` for a group split), and
+``evaluate_result`` to your metric. Keep the scoring program's metric the
+same.
 """
 
 from benchopt import BaseObjective
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import StratifiedKFold
 
 
 class Objective(BaseObjective):
@@ -24,26 +31,34 @@ class Objective(BaseObjective):
 
     min_benchopt_version = "1.10.0"
 
-    # Each solver trains once (no convergence curve).
+    # Each solver trains once per fold (no convergence curve).
     sampling_strategy = "run_once"
 
-    def set_data(self, X_train, y_train, test_sets):
-        # test_sets: ``name -> (X, y)``; the test labels stay here so the
-        # objective owns evaluation.
-        self.X_train = X_train
-        self.y_train = y_train
-        self.test_sets = test_sets
+    def set_data(self, X, y, X_test):
+        # X_test: ``name -> X``, the test sets without their labels.
+        self.X, self.y, self.X_test = X, y, X_test
+        self.cv = StratifiedKFold(n_splits=5, shuffle=True,
+                                  random_state=self.get_seed())
+
+    def split(self, cv_fold, X, y):
+        train, val = cv_fold
+        return X.iloc[train], X.iloc[val], y.iloc[train], y.iloc[val]
 
     def get_objective(self):
-        return dict(X_train=self.X_train, y_train=self.y_train)
+        # The fold follows the repetition index.
+        X_train, self.X_val, y_train, self.y_val = self.get_split(self.X,
+                                                                  self.y)
+        return dict(X_train=X_train, y_train=y_train)
 
     def evaluate_result(self, model):
-        return {
-            f"accuracy_{name}": float(accuracy_score(y, model.predict(X)))
-            for name, (X, y) in self.test_sets.items()
-        }
+        return dict(accuracy_cv=float(
+            accuracy_score(self.y_val, model.predict(self.X_val))))
+
+    def save_final_results(self, model):
+        # Test predictions, scored by the scoring program.
+        return {name: model.predict(X) for name, X in self.X_test.items()}
 
     def get_one_result(self):
         # A trained trivial model, to validate the metric in ``benchopt test``.
         from sklearn.dummy import DummyClassifier
-        return dict(model=DummyClassifier().fit(self.X_train, self.y_train))
+        return dict(model=DummyClassifier().fit(self.X, self.y))
