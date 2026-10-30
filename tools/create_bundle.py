@@ -56,7 +56,8 @@ def build_bundle():
         _add_dir(bundle, ROOT_DIR / "pages", "pages")
         _add_dir(bundle, ROOT_DIR / "ingestion_program", "ingestion_program")
         _add_dir(bundle, ROOT_DIR / "scoring_program", "scoring_program")
-        _add_dir(bundle, ROOT_DIR / "solution", "solution")
+        _add_file(bundle, ROOT_DIR / "benchmark/solvers/random-forest.py",
+                  "solution/submission.py")
 
         _add_file(bundle, ROOT_DIR / "phases/main/input_data/config.yaml",
                   "main_phase/input_data/config.yaml")

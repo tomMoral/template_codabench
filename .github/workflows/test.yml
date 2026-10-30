@@ -32,7 +32,7 @@ jobs:
         run: benchopt test benchmark --skip-install
       - name: Smoke run on Simulated
         run: |
-          benchopt run benchmark -d Simulated -s Dummy -s solution/submission.py \
+          benchopt run benchmark -d Simulated -s Dummy -s RandomForest \
             -r 1 --no-cache --no-plot --no-html --no-display
       - name: Build bundle + end-to-end ingestion + scoring (Simulated)
         run: |

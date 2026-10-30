@@ -28,8 +28,9 @@ if __name__ == "__main__":
     parser.add_argument("--data",
                         default=str(REPO / "benchmark/data"),
                         help="Host data dir mounted read-only as /app/data")
-    parser.add_argument("--submission", default=str(REPO / "solution"),
-                        help="Submission folder (default: solution/)")
+    parser.add_argument("--submission",
+                        help="Folder holding submission.py (default: the "
+                        "sample benchmark/solvers/random-forest.py)")
     args = parser.parse_args()
 
     client = docker.from_env()
@@ -39,6 +40,12 @@ if __name__ == "__main__":
                         tag=image)
 
     phase = REPO / "phases/main/input_data"
+    # Without --submission, mount the sample solver as submission.py.
+    submission = (
+        f"{args.submission}:/app/ingested_program" if args.submission
+        else f"{REPO / 'benchmark/solvers/random-forest.py'}:"
+        "/app/ingested_program/submission.py"
+    )
     out = REPO / "_codabench/ingestion"
     out.mkdir(parents=True, exist_ok=True)
     print("Running ingestion...")
@@ -48,9 +55,7 @@ if __name__ == "__main__":
         volumes=[
             f"{phase}:/app/input_data",
             f"{REPO / 'benchmark'}:/app/input_data/benchmark:ro",
-            # Target of the benchmark's solvers/submission.py symlink.
-            f"{REPO / 'solution'}:/app/input_data/solution:ro",
-            f"{args.submission}:/app/ingested_program",
+            submission,
             f"{out}:/app/output",
             f"{args.data}:/app/data:ro",
         ],

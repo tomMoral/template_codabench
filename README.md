@@ -17,8 +17,7 @@ scoring programs are thin wrappers around it.
 | `benchmark/datasets/real.py` | the real data: `prepare()` builds the splits, `get_data()` loads them |
 | `benchmark/datasets/simulated.py` | synthetic data with the same keys, for smoke tests and CI |
 | `benchmark/benchmark_utils/base_solver.py` | the submission contract (`CompetSolver`) |
-| `benchmark/solvers/` | built-in baselines (a `Dummy` floor, and a symlink to the sample submission) |
-| `solution/submission.py` | the sample submission participants start from |
+| `benchmark/solvers/` | built-in baselines: a `Dummy` floor, and `random-forest.py`, the sample submission participants start from |
 | `ingestion_program/` | runs `benchopt run` on a submission |
 | `scoring_program/` | turns the benchopt results into `scores.json` |
 | `phases/main/input_data/config.yaml` | the phase: benchopt run config + leaderboard column map |
@@ -38,7 +37,7 @@ In this order, since each step builds on the previous one:
 3. **Task and metric.** Adapt `Objective.set_data`, `get_objective` and
    `evaluate_result`. Metrics come out as `objective_<metric>_<subset>`.
 4. **Submission contract.** Adapt `CompetSolver` to what `get_objective`
-   returns, then the `Dummy` floor and `solution/submission.py`.
+   returns, then the `Dummy` floor and the sample `random-forest.py`.
 5. **Phase and leaderboard.** Map the leaderboard keys to the objective's
    columns in `phases/main/input_data/config.yaml`, and declare the same keys
    in `competition.yaml` (`hidden: True` for the private ones).
@@ -56,10 +55,10 @@ In this order, since each step builds on the previous one:
 ```bash
 pip install -r requirements.txt
 benchopt test benchmark --skip-install                  # design checks
-benchopt run benchmark -d Simulated -s Dummy -s solution/submission.py
+benchopt run benchmark -d Simulated -s Dummy -s RandomForest
 
 benchopt prepare benchmark -d Real
-benchopt run benchmark -d Real -s solution/submission.py
+benchopt run benchmark -d Real -s RandomForest
 ```
 
 The data goes to `$BENCHOPT_DATA_HOME` (default: `benchmark/data`).

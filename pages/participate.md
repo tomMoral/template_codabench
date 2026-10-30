@@ -35,15 +35,16 @@ class Solver(CompetSolver):
 ```
 
 Your trained model must expose `predict(X) -> ndarray (n_samples,)`. The
-platform **trains your code**, then evaluates it. See `solution/submission.py`
-for a working baseline.
+platform **trains your code**, then evaluates it. Copy
+`benchmark/solvers/random-forest.py`, a working baseline, to
+`my_submission/submission.py`.
 
 ## Run it locally, same code as the server
 
 ```bash
 pip install -r requirements.txt
 benchopt prepare benchmark -d Real
-benchopt run benchmark -d Real -s solution/submission.py
+benchopt run benchmark -d Real -s my_submission/submission.py
 ```
 
 The number you get locally on the public split is the number the leaderboard
