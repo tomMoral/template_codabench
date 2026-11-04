@@ -36,6 +36,23 @@ To hand in:
 - [ ] The starting kit is executed and committed with its outputs.
 - [ ] The repository link and the Codabench competition link are sent to the
       instructors.
+
+### What the starting kit must show
+
+A good challenge makes three points, each backed by evidence in the starting
+kit notebook and tied to its exploratory data analysis (EDA).
+
+| Point | Evidence expected in the starting kit |
+|---|---|
+| **The data is interesting.** | Where it comes from, its license, its size in independent units (patients, sites, sessions, not rows). It is not an already-solved toy dataset. |
+| **The question is interesting and this data can answer it.** | Who would use the model and for what decision. A simple baseline clearly beats the `Dummy` floor, and leaves room above it. |
+| **The evaluation can answer the question.** | Why this metric and not the obvious alternative. Why this split, which unit it holds out and why it matches deployment. Checks that it does not leak. Public and private scores of the baseline agree, and the test set is big enough for leaderboard gaps to mean something. |
+
+The starting kit carries the full argument. The Participate page is a short
+summary of it that links to the notebook. Keep both easy to read: short code
+cells, every figure with a title, axis labels and a one-line takeaway, and the
+notebook committed **with its outputs** so it reads on GitHub without running
+it.
 <!-- END DataCamp course section. -->
 
 ## Documentation and AI skills
@@ -56,88 +73,41 @@ To hand in:
     install it with `benchopt sync-skills` from the repository root, and
     re-run it after a benchopt upgrade.
   - [`codabench-benchopt`](.agents/skills/codabench-benchopt/SKILL.md):
-    designing a benchopt-powered Codabench competition. Read
-    [`data-and-splits.md`](.agents/skills/codabench-benchopt/data-and-splits.md)
-    before choosing your split: it covers cross-validation versus a sealed
-    split, leakage, baselines and the public/private shift.
+    designing a benchopt-powered Codabench competition.
 
-## Layout
-
-| Path | Content |
-|---|---|
-| `template_starting_kit.ipynb` | skeleton of the participants' starting kit, with the EDA and the evaluation |
-| `benchmark/objective.py` | the task: what the solver receives, the CV scheme and the metric |
-| `benchmark/datasets/real.py` | the real data: `prepare()` builds the splits, `get_data()` loads them |
-| `benchmark/datasets/simulated.py` | synthetic data with the same keys, for smoke tests and CI |
-| `benchmark/benchmark_utils/base_solver.py` | the submission contract (`CompetSolver`) |
-| `benchmark/solvers/` | built-in baselines: a `Dummy` floor, and `random-forest.py`, the sample submission participants start from |
-| `ingestion_program/` | runs `benchopt run` on a submission |
-| `scoring_program/` | scores the test predictions against the labels, averages over the folds into `scores.json` |
-| `phases/main/input_data/config.yaml` | the phase: benchopt run config (dataset, seed, one CV fold per repetition) |
-| `local_config.yml` | the same run config for local runs, plus the solvers to run |
-| `competition.yaml`, `pages/` | the Codabench competition and its pages |
-| `tools/` | bundle builder, base and competition Docker images, local Docker run |
-| `.agents/skills/` | the AI agent skills above |
-
-## What the starting kit must show
-
-A good challenge makes three points, each backed by evidence in the starting
-kit notebook and tied to its exploratory data analysis (EDA).
-
-| Point | Evidence expected in the starting kit |
-|---|---|
-| **The data is interesting.** | Where it comes from, its license, its size in independent units (patients, sites, sessions, not rows). It is not an already-solved toy dataset. |
-| **The question is interesting and this data can answer it.** | Who would use the model and for what decision. A simple baseline clearly beats the `Dummy` floor, and leaves room above it. |
-| **The evaluation can answer the question.** | Why this metric and not the obvious alternative. Why this split, which unit it holds out and why it matches deployment. Checks that it does not leak. Public and private scores of the baseline agree, and the test set is big enough for leaderboard gaps to mean something. |
-
-The starting kit carries the full argument. The Participate page is a short
-summary of it that links to the notebook. Keep both easy to read: short code
-cells, every figure with a title, axis labels and a one-line takeaway, and the
-notebook committed **with its outputs** so it reads on GitHub without running
-it.
 
 ## Adapting the template
 
 In this order, since each step builds on the previous one:
 
-1. **Data and question.** Pick the data and the question. Rename the
-   notebook to `<challenge>_starting_kit.ipynb` and fill in its introduction.
-2. **EDA.** Explore the data in the notebook. Look for the structure that
-   decides the split: groups (patients, sites, subjects), time, duplicates.
-3. **Evaluation protocol.** From the EDA, choose the metric, the CV scheme
-   (stratified, by group, by time...), and how the test sets are cut and what
-   separates the public from the private one.
-4. **Data in the benchmark.** Rewrite `Real.prepare()` to fetch or convert
+1. **Data in the benchmark.** Pick the data and decide the separation between
+   public and private parts. Rewrite `Real.prepare()` to fetch or convert
    your raw data, cut the test sets and write the private labels apart (they
    become the phase `reference_data`), and `Real.get_data()` to load the
    rest. Make `Simulated` return the same keys and types.
-5. **Task, CV and metric.** Write the metric in
+2. **Task, CV and metric.** Choose the metric, the CV scheme
+   (stratified, by group, by time...). Write the metric in
    `benchmark/benchmark_utils/metric.py`. Adapt `Objective.set_data` (data
    and `cv`), `get_objective` and `evaluate_result`, and set `n_repetitions`
    in `phases/main/input_data/config.yaml` and `local_config.yml` to the
-   number of folds.
-6. **Submission contract.** Adapt `CompetSolver` to what `get_objective`
+   number of folds. `set_data` should accept the output of `Real.get_data`.
+3. **Submission contract.** Adapt `CompetSolver` to what `get_objective`
    returns, then the `Dummy` floor and the sample `random-forest.py`.
-7. **Evaluation evidence.** Fill the notebook's evaluation section: leakage
-   checks, and baseline scores in CV, public and private, with their spread
-   over the folds.
-8. **Leaderboard.** Declare the keys of `scores.json` in `competition.yaml`
+4. **Leaderboard.** Declare the keys of `scores.json` in `competition.yaml`
    (`hidden: True` for the private ones).
-9. **Environment.** The default image,
+5. **Environment.** The default image,
    `ghcr.io/x-datascience-datacamp/codabench-benchopt`, has benchopt,
    pandas, scikit-learn and torch (CPU). If submissions need more, list it in
    `requirements.txt`, build and push your image from `tools/Dockerfile`, and
    set `docker_image` in `competition.yaml`. `codabench-benchopt-gpu` is the
    CUDA variant, for a self-hosted GPU worker.
-10. **Pages, dates and quotas** in `pages/` and `competition.yaml`. The
+6. **Pages, dates and quotas** in `pages/` and `competition.yaml`. The
     Participate page summarizes the notebook.
 
 ## Before opening the competition
 
-- [ ] The starting kit covers the three points of
-      [What the starting kit must show](#what-the-starting-kit-must-show).
 - [ ] `Dummy` and the sample submission are scored in CV, public and
-      private, and the sample submission clearly beats `Dummy`.
+      private, and the sample submission beats `Dummy`.
 - [ ] The split has a leakage check in the notebook.
 - [ ] CI is green.
 - [ ] `bundle.zip` uploads on Codabench and scores the sample submission.
@@ -242,3 +212,22 @@ image. If your data cannot be prepared in CI, run the end-to-end step on
 `.github/workflows/images.yml` builds and pushes the base images
 `codabench-benchopt` and `codabench-benchopt-gpu` from
 `tools/Dockerfile.base` to the GitHub container registry.
+
+
+## Layout
+
+| Path | Content |
+|---|---|
+| `template_starting_kit.ipynb` | skeleton of the participants' starting kit, with the EDA and the evaluation |
+| `benchmark/objective.py` | the task: what the solver receives, the CV scheme and the metric |
+| `benchmark/datasets/real.py` | the real data: `prepare()` builds the splits, `get_data()` loads them |
+| `benchmark/datasets/simulated.py` | synthetic data with the same keys, for smoke tests and CI |
+| `benchmark/benchmark_utils/base_solver.py` | the submission contract (`CompetSolver`) |
+| `benchmark/solvers/` | built-in baselines: a `Dummy` floor, and `random-forest.py`, the sample submission participants start from |
+| `ingestion_program/` | runs `benchopt run` on a submission |
+| `scoring_program/` | scores the test predictions against the labels, averages over the folds into `scores.json` |
+| `phases/main/input_data/config.yaml` | the phase: benchopt run config (dataset, seed, one CV fold per repetition) |
+| `local_config.yml` | the same run config for local runs, plus the solvers to run |
+| `competition.yaml`, `pages/` | the Codabench competition and its pages |
+| `tools/` | bundle builder, base and competition Docker images, local Docker run |
+| `.agents/skills/` | the AI agent skills above |
