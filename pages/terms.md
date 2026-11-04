@@ -1,18 +1,25 @@
 # Terms and Conditions
 
-## Lorem Ipsum
+By participating in this competition you agree to the following.
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
-Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure
-dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non
-proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+1. **Submissions must be your own work.** You may use public libraries and
+   pretrained models, but the training and modelling code you submit must be
+   authored by your team.
+2. **No attempt to access the hidden data.** The private test set is used only
+   for the final ranking. Any attempt to read, exfiltrate or reverse-engineer
+   it is cheating and disqualifies the team.
+3. **Fair use of the platform.** Respect the per-day submission limit and the
+   execution-time budget. Do not attempt to interfere with other participants'
+   runs or the evaluation infrastructure.
+4. **Reproducibility.** The organizers may re-run any submission to verify its
+   leaderboard score. A submission that cannot be reproduced may be removed.
+5. **Data usage.** The data are provided for use within this competition
+   only.
 
-## Sed ut perspiciatis
+<!-- BEGIN DataCamp course section. Delete up to END for a general release. -->
+In the DataCamp course, cheating also results in a grade of 0 for the course
+and in failing the master.
+<!-- END DataCamp course section. -->
 
-Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae 
-ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit 
-aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam 
-est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore 
-et dolore magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, 
-nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae 
-consequatur, vel illum qui dolorem eum fugiat quo voluptas nulla pariatur?
+The organizers may adjust these rules and will announce any change on the
+competition pages.

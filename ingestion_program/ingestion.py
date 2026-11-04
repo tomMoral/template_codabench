@@ -1,92 +1,71 @@
-import json
-import sys
-import time
+"""Ingestion program for the competition.
+
+A thin wrapper around ``benchopt run``. A submission is a benchopt solver:
+a single ``submission.py`` (a ``CompetSolver``) holding all its Python
+code, plus optional non-code files (weights, configs) it reads from
+``meta["submission_dir"]``. This program runs the benchmark shipped in the
+phase ``input_data/benchmark`` on that file, loaded by path::
+
+    benchopt run <input_data>/benchmark --config <input_data>/config.yaml \
+        -s <submission_dir>/submission.py --no-cache --no-plot \
+        --output <output_dir>/results.parquet
+
+The phase ``config.yaml`` is a native benchopt run config (``dataset``,
+``seed``, ``n_repetitions``: one cross-validation fold per repetition). The
+scoring program scores the test predictions of ``results.parquet``. The
+prepared data comes with the phase, in ``input_data/data``. Without it, the
+run uses the image's $BENCHOPT_DATA_HOME (/app/data, where a self-hosted
+worker mounts the staged data read-only). $BENCHOPT_DEBUG ensures any solver
+error aborts the run.
+"""
+
+import os
 from pathlib import Path
 
-import pandas as pd
+os.environ["BENCHOPT_DEBUG"] = "true"
+
+import argparse  # noqa: E402
+import json  # noqa: E402
+import subprocess  # noqa: E402
+import time  # noqa: E402
 
 
-EVAL_SETS = ["test", "private_test"]
+def main(submission_dir, output_dir, input_dir):
+    submission = submission_dir / "submission.py"
+    if not submission.is_file():
+        raise SystemExit(f"No submission.py found in {submission_dir}.")
+    benchmark_dir = input_dir / "benchmark"
+    if not (benchmark_dir / "objective.py").is_file():
+        raise SystemExit(f"No benchopt benchmark found in {benchmark_dir}.")
 
+    if (input_dir / "data").is_dir():
+        os.environ["BENCHOPT_DATA_HOME"] = str((input_dir / "data").resolve())
 
-def evaluate_model(model, X_test):
-
-    y_pred = model.predict(X_test)
-    return pd.DataFrame(y_pred)
-
-
-def get_train_data(data_dir):
-    data_dir = Path(data_dir)
-    training_dir = data_dir / "train"
-    X_train = pd.read_csv(training_dir / "train_features.csv")
-    y_train = pd.read_csv(training_dir / "train_labels.csv")
-    return X_train, y_train
-
-
-def main(data_dir, output_dir):
-    # Here, you can import info from the submission module, to evaluate the
-    # submission
-    from submission import get_model
-
-    X_train, y_train = get_train_data(data_dir)
-
-    print("Training the model")
-
-    model = get_model()
-
-    start = time.time()
-    model.fit(X_train, y_train)
-    train_time = time.time() - start
-    print("-" * 10)
-    print("Evaluate the model")
-    start = time.time()
-    res = {}
-    for eval_set in EVAL_SETS:
-        X_test = pd.read_csv(data_dir / eval_set / f"{eval_set}_features.csv")
-        res[eval_set] = evaluate_model(model, X_test)
-    test_time = time.time() - start
-    print("-" * 10)
-    duration = train_time + test_time
-    print(f"Completed Prediction. Total duration: {duration}")
-
-    # Write output files
     output_dir.mkdir(parents=True, exist_ok=True)
-    with open(output_dir / "metadata.json", "w+") as f:
-        json.dump(dict(train_time=train_time, test_time=test_time), f)
-    for eval_set in EVAL_SETS:
-        filepath = output_dir / f"{eval_set}_predictions.csv"
-        res[eval_set].to_csv(filepath, index=False)
-    print()
-    print("Ingestion Program finished. Moving on to scoring")
+    cmd = [
+        "benchopt", "run", str(benchmark_dir), "-s", str(submission),
+        "--no-cache", "--no-plot", "--no-html", "--no-display",
+        "--output", str(output_dir / "results.parquet"),
+        "--config", str(input_dir / "config.yaml"),
+    ]
+    print(f"[ingestion] evaluating {submission}", flush=True)
+    start = time.time()
+    subprocess.run(cmd, check=True)
+
+    (output_dir / "metadata.json").write_text(
+        json.dumps({"duration": time.time() - start}))
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Ingestion program for codabench"
-    )
-    parser.add_argument(
-        "--data-dir",
-        type=str,
-        default="/app/input_data",
-        help="",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="/app/output",
-        help="",
-    )
-    parser.add_argument(
-        "--submission-dir",
-        type=str,
-        default="/app/ingested_program",
-        help="",
-    )
-
+    parser = argparse.ArgumentParser(description="Competition ingestion")
+    parser.add_argument("--submission-dir", default="/app/ingested_program")
+    parser.add_argument("--output-dir", default="/app/output")
+    parser.add_argument("--input-data", default="/app/input_data",
+                        help="Phase dir: config.yaml, benchmark/ and data/")
     args = parser.parse_args()
-    sys.path.append(args.submission_dir)
-    sys.path.append(Path(__file__).parent.resolve())
 
-    main(Path(args.data_dir), Path(args.output_dir))
+    main(
+        Path(args.submission_dir),
+        Path(args.output_dir),
+        Path(args.input_data),
+    )

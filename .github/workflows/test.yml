@@ -1,89 +1,65 @@
-# Test that the docker image builds correctly
-# and that running the ingestion and scoring programs works
-# Also use cache for the data and the docker image.
-name: Test Docker Image
+# CI: lint + benchopt design tests + a native end-to-end ingestion/scoring
+# run on the Real dataset, plus a Docker image build.
+name: Test
 
 on:
-    push:
-        branches: [ main ]
-    pull_request:
+  push:
+    branches: [main]
+  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-    test:
-        runs-on: ubuntu-latest
-        env:
-            DOCKER_IMAGE_NAME: docker-codabench-test
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install
+        run: |
+          pip install -U pip flake8 pytest
+          # CPU torch first, so requirements.txt keeps it (no CUDA wheels).
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+      - name: Lint
+        run: flake8 . --max-line-length=79 --exclude=.git,worktrees,__cache__
+      - name: benchopt design tests
+        run: benchopt test benchmark --skip-install
+      - name: Smoke run on Simulated
+        run: |
+          benchopt run benchmark --config local_config.yml -d Simulated \
+            --no-cache --no-plot --no-html --no-display
+      - name: Build bundle + end-to-end ingestion + scoring (Real)
+        # The template's stand-in data ships with scikit-learn. If your data
+        # cannot be prepared in CI, run this step on Simulated instead: it
+        # has no private labels, so the private score is not checked.
+        run: |
+          benchopt prepare benchmark --config local_config.yml
+          python tools/create_bundle.py
+          python -c "import zipfile; zipfile.ZipFile('bundle.zip').extractall('_codabench/bundle')"
+          python _codabench/bundle/ingestion_program/ingestion.py \
+            --submission-dir _codabench/bundle/solution \
+            --input-data _codabench/bundle/main_phase/input_data \
+            --output-dir _codabench/ingestion
+          python _codabench/bundle/scoring_program/scoring.py \
+            --prediction-dir _codabench/ingestion \
+            --reference-dir _codabench/bundle/main_phase/reference_data \
+            --output-dir _codabench/scoring
+          python -c "import json, yaml; s=json.load(open('_codabench/scoring/scores.json')); \
+            keys={c['key'] for b in yaml.safe_load(open('competition.yaml'))['leaderboards'] for c in b['columns']}; \
+            assert keys <= set(s), (keys, s); print('scores OK:', s)"
 
-        steps:
-            - name: Delete huge unnecessary tools folder
-              run: |
-                echo "################################"
-                echo "Disk usage BEFORE cleanup:"
-                echo "################################"
-                df -h
-
-                echo "Removing .NET..."
-                rm -rf /usr/share/dotnet || true
-
-                echo "Removing Android SDK..."
-                sudo rm -rf /usr/local/lib/android || true
-
-                echo "Removing GHC / Haskell..."
-                rm -rf /opt/ghc || true
-                sudo rm -rf /usr/local/.ghcup || true
-
-                echo "################################"
-                echo "Disk usage AFTER cleanup:"
-                echo "################################"
-                df -h
-
-            - name: Checkout repository
-              uses: actions/checkout@v3
-
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v3
-
-            - name: Docker build
-              uses: docker/build-push-action@v6
-              with:
-                file: ./tools/Dockerfile
-                push: false
-                load: true
-                tags: ${{ env.DOCKER_IMAGE_NAME }}
-                # Use GitHub Actions (GHA) as the cache backend
-                # 'cache-from' attempts to restore layers from previous runs
-                cache-from: type=gha,scope=${{ env.DOCKER_IMAGE_NAME }}-${{ hashFiles('**/Dockerfile') }}-${{ hashFiles('**/requirements.txt') }}
-                # 'cache-to' saves the new layers after the build finishes
-                cache-to: type=gha,mode=max,scope=${{ env.DOCKER_IMAGE_NAME }}-${{ hashFiles('**/Dockerfile') }}-${{ hashFiles('**/requirements.txt') }}
-
-            - uses: actions/setup-python@main
-              with:
-                python-version: '3.12'
-                pip-install: -r requirements.txt
-                cache: 'pip' # caching pip dependencies
-            - name: Prepare input/output directories
-              run: python tools/setup_data.py
-
-            - name: Test ingestion program
-              run: |
-                docker run --rm -u root \
-                    -v "./ingestion_program":"/app/ingestion_program" \
-                    -v "./dev_phase/input_data":/app/input_data \
-                    -v "./ingestion_res":/app/output \
-                    -v "./solution":/app/ingested_program \
-                    --name ingestion ${{ env.DOCKER_IMAGE_NAME }} \
-                        python /app/ingestion_program/ingestion.py
-
-            - name: Test scoring program
-              run: |
-                docker run --rm -u root \
-                    -v "./scoring_program":"/app/scoring_program" \
-                    -v "./dev_phase/reference_data":/app/input/ref \
-                    -v "./ingestion_res":/app/input/res \
-                    -v "./scoring_res":/app/output \
-                    --name scoring ${{ env.DOCKER_IMAGE_NAME }} \
-                        python /app/scoring_program/scoring.py
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the CPU base image and the competition image on top
+        run: |
+          docker build -f tools/Dockerfile.base -t codabench-benchopt-test .
+          docker build -f tools/Dockerfile -t codabench-compet-test \
+            --build-arg BASE=codabench-benchopt-test .

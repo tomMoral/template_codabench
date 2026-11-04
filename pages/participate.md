@@ -1,10 +1,80 @@
 # How to participate
 
-You should submit an untrained model in a python file `model.py` which contains
-your `class Model`, which will be imported, trained, and tested on Codalab.
+Each section below is a short summary. The
+[starting kit](TODO-link-to-the-starting-kit-notebook) gives the full argument,
+with the data analysis behind each choice.
 
-See the "Seed" page for the outline of a `Model` class, with the expected
-function names.
+## The task
 
-See the "Timeline" page for additional information about the phases of this
-competition
+**TODO:** one paragraph: the data, what is predicted from what, and why it
+matters.
+In this template: a binary classification of tabular samples.
+
+## The metric
+
+**TODO:** the metric, whether higher or lower is better, and why it fits
+the use case. In this template: **accuracy** (higher is better).
+
+## The split
+
+**TODO:** the unit held out (rows, patients, sites, time periods) and the
+generalization it measures. If the test sets differ from the training set on
+purpose (new sites, later dates), say so.
+
+Your model is trained and scored with 5-fold cross-validation on the
+training data, then each fold's model predicts the test sets. Every score is
+averaged over the 5 folds.
+
+- **CV column**: the cross-validation score.
+- **Public column** (live feedback): a public test set.
+- **Private / final ranking** (hidden): a private test set. Do not overfit
+  the public column.
+
+## What you submit
+
+A single **`submission.py`** defining `class Solver(CompetSolver)`. All your
+Python code must live in this one file: the platform loads it on its own, so
+it cannot import other `.py` files you ship. You may add non-code files next
+to it (model weights, configs) and read them from `meta["submission_dir"]`.
+
+```python
+from benchmark_utils.base_solver import CompetSolver
+
+
+class Solver(CompetSolver):
+    name = "submission"
+
+    def get_model(self, meta):
+        # build your (untrained) model
+        ...
+
+    def fit(self, model, X_train, y_train):
+        # optional: train it (default: model.fit(X_train, y_train))
+        ...
+```
+
+Your trained model must expose `predict(X) -> ndarray (n_samples,)`. The
+platform **trains your code**, once per fold, then evaluates it. Copy
+`benchmark/solvers/random-forest.py`, a working baseline, to
+`my_submission/submission.py`.
+
+## Run it locally, same code as the server
+
+`local_config.yml` sets the dataset, the solvers, the seed and the 5 folds
+of a local run. Add your `my_submission/submission.py` to its `solver` list,
+then:
+
+```bash
+pip install -r requirements.txt
+benchopt prepare benchmark --config local_config.yml   # builds the data
+benchopt run benchmark --config local_config.yml
+```
+
+A command-line option overrides the file, e.g. `-s my_submission/submission.py`
+runs your submission alone.
+
+The cross-validation and public scores you get locally
+(`objective_accuracy_cv` and `objective_accuracy_public`, averaged over the 5
+repetitions) are the CV and public columns of the leaderboard. The benchmark
+you run *is* the benchmark the server runs. Select your models on the CV
+score rather than on the public one.

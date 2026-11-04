@@ -1,49 +1,84 @@
+"""Build the image and run ingestion + scoring in it (local platform test).
+
+Mirrors the platform layout: the phase config, the benchmark and the
+prepared data are mounted as ``/app/input_data``, a submission as
+``/app/ingested_program``, the programs as ``/app/program`` (with
+``benchmark_utils``, the metric, next to scoring), and the hidden test labels
+as ``/app/input/ref``. Prepare the data first with
+``benchopt prepare benchmark -d Real`` (writes ``benchmark/data``).
+
+Usage
+-----
+    python tools/run_docker.py [--data <host-data-dir>] [--submission <dir>]
+"""
+
+import argparse
 from pathlib import Path
+
 try:
     import docker
 except ImportError:
     raise ImportError(
-        "The 'docker' package is required to run this script. "
-        "Please install it using 'pip install docker'."
+        "The 'docker' package is required: pip install docker."
     )
 
 REPO = Path(__file__).resolve().parent.parent
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Docker ingestion test")
+    parser.add_argument("--data",
+                        default=str(REPO / "benchmark/data"),
+                        help="Prepared data dir (benchopt data home)")
+    parser.add_argument("--submission",
+                        help="Folder holding submission.py (default: the "
+                        "sample benchmark/solvers/random-forest.py)")
+    args = parser.parse_args()
+    data = Path(args.data).resolve()
+
     client = docker.from_env()
-    print("Docker client initialized successfully.")
+    image = "codabench-compet:dev"
+    print(f"Building {image}...")
+    client.images.build(path=str(REPO), dockerfile="tools/Dockerfile",
+                        tag=image)
 
-    print("Building Docker image...")
-    client.images.build(path=".", tag="tommoral/template:v1")
-    print("Docker image built successfully with tag 'tommoral/template:v1'.")
-
-    print("Running Docker container...")
+    phase = REPO / "phases/main/input_data"
+    # Without --submission, mount the sample solver as submission.py.
+    submission = (
+        f"{args.submission}:/app/ingested_program" if args.submission
+        else f"{REPO / 'benchmark/solvers/random-forest.py'}:"
+        "/app/ingested_program/submission.py"
+    )
+    out = REPO / "_codabench/ingestion"
+    out.mkdir(parents=True, exist_ok=True)
+    print("Running ingestion...")
     logs = client.containers.run(
-        image="tommoral/template:v1",
-        command="python3 /app/ingestion_program/ingestion.py",
-        remove=True,
-        name="ingestion",
-        user="root",
+        image=image, remove=True, name="ingestion", user="root",
+        command="python3 /app/program/ingestion.py",
         volumes=[
-            f"{REPO}/ingestion_program:/app/ingestion_program",
-            f"{REPO}/dev_phase/input_data:/app/input_data",
-            f"{REPO}/ingestion_res:/app/output",
-            f"{REPO}/solution:/app/ingested_program",
-        ]
+            f"{REPO / 'ingestion_program'}:/app/program:ro",
+            f"{phase}:/app/input_data",
+            f"{REPO / 'benchmark'}:/app/input_data/benchmark:ro",
+            f"{data}:/app/input_data/data:ro",
+            submission,
+            f"{out}:/app/output",
+        ],
     )
     print(logs.decode("utf-8"))
+
+    score = REPO / "_codabench/scoring"
+    score.mkdir(parents=True, exist_ok=True)
+    print("Running scoring...")
     logs = client.containers.run(
-        image="tommoral/template:v1",
-        command="python3 /app/scoring_program/scoring.py",
-        remove=True,
-        name="scoring",
-        user="root",
+        image=image, remove=True, name="scoring", user="root",
+        command="python3 /app/program/scoring.py",
         volumes=[
-            f"{REPO}/scoring_program:/app/scoring_program",
-            f"{REPO}/dev_phase/reference_data:/app/input/ref",
-            f"{REPO}/ingestion_res:/app/input/res",
-            f"{REPO}/scoring_res:/app/",
-        ]
+            f"{REPO / 'scoring_program'}:/app/program:ro",
+            f"{REPO / 'benchmark/benchmark_utils'}:"
+            "/app/program/benchmark_utils:ro",
+            f"{out}:/app/input/res",
+            f"{data / 'reference'}:/app/input/ref:ro",
+            f"{score}:/app/output",
+        ],
     )
     print(logs.decode("utf-8"))
     print("Docker container ran successfully.")

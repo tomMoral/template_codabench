@@ -1,20 +1,15 @@
-# Step 1: Start from an official Docker image with desired base environment
-# Good starting points are the official codalab images or
-# pytorch images with CUDA support:
-#    - Codalab: codalab/codalab-legacy:py39
-#    - Codalab GPU: codalab/codalab-legacy:gpu310
-#    - Pytorch: pytorch/pytorch:2.8.0-cuda12.6-cudnn9-runtime
-FROM codalab/codalab-legacy:py39
+# The competition image: a base image plus requirements.txt. Build it from
+# the repo root and push it, then set docker_image in competition.yaml:
+#
+#     docker build -f tools/Dockerfile -t <dockerhub-user>/<competition>:v1 .
+#     # GPU (self-hosted GPU worker only)
+#     docker build -f tools/Dockerfile -t <dockerhub-user>/<competition>:v1 \
+#         --build-arg BASE=ghcr.io/x-datascience-datacamp/codabench-benchopt-gpu .
+#
+# With nothing in requirements.txt beyond the base image, skip this build and
+# use the base image itself as docker_image.
+ARG BASE=ghcr.io/x-datascience-datacamp/codabench-benchopt
+FROM ${BASE}
 
-# Set environment variables to prevent interactive prompts
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Step 2: Install system-level dependencies (if any)
-# e.g., git, wget, or common libraries for OpenCV like libgl1
-RUN pip install -U pip
-
-# Step 3: Copy and pre-install all Python dependencies
-# This 'requirements.txt' file should list pandas, scikit-learn, timm, etc.
-# Place it in the same directory as this Dockerfile.
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt

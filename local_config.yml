@@ -1,0 +1,18 @@
+# Local run config, for both commands:
+#
+#     benchopt prepare benchmark --config local_config.yml
+#     benchopt run benchmark --config local_config.yml
+#
+# `prepare` reads only `dataset`. A command-line option overrides its key
+# here, e.g. `-d Simulated` for a quick smoke test. The platform runs the
+# phase config, phases/main/input_data/config.yaml: keep the two in sync.
+dataset:
+  - Real
+solver:
+  - Dummy
+  - RandomForest
+  # - my_submission/submission.py
+seed: 42
+# One cross-validation fold per repetition: match the objective's n_splits.
+n_repetitions: 5
+no_timeout: true

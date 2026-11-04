@@ -1,2 +1,8 @@
+# Dependencies of the competition: the ingestion and scoring programs, the
+# benchmark and every submission. No install happens at submission time, so
+# this is the participants' dependency contract. The base image
+# (tools/Dockerfile.base) already has these and torch: add what your
+# challenge needs, and tools/Dockerfile installs it on top.
+benchopt>=1.10
 pandas
 scikit-learn

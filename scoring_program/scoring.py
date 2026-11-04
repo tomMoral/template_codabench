@@ -1,72 +1,65 @@
+"""Scoring program for the competition.
+
+The ingestion run cross-validates the submission, one fold per repetition.
+Each row of ``results.parquet`` holds the fold's metrics (``objective_*``)
+and its predictions on each hidden test set (``objective_<test set>_pred``).
+This program scores these predictions against the labels of the phase
+``reference_data`` (one ``<test set>.csv`` with a ``target`` column per hidden
+test set), and averages every score over the folds into ``scores.json``:
+``accuracy_cv``, ``accuracy_public``, ``accuracy_private``, ``train_time``
+and ``duration``.
+
+The metric is the benchmark's ``benchmark_utils/metric.py``, which
+``tools/create_bundle.py`` copies next to this program.
+"""
+
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
-EVAL_SETS = ["test", "private_test"]
+from benchmark_utils.metric import NAME, score
 
 
-def compute_accuracy(predictions, targets):
-    # Make sure there is no NaN, as pandas ignores them in mean computation
-    predictions = predictions.fillna(-10).values
-    # Return mean of correct predictions
-    return (predictions == targets.values).mean()
+def main(prediction_dir, reference_dir, output_dir):
+    from benchopt.results import read_results
 
+    df = read_results(prediction_dir / "results.parquet")
 
-def main(reference_dir, prediction_dir, output_dir):
     scores = {}
-    for eval_set in EVAL_SETS:
-        print(f'Scoring {eval_set}')
+    for ref in sorted(reference_dir.glob("*.csv")):
+        y_true = pd.read_csv(ref)["target"]
+        scores[f"{NAME}_{ref.stem}"] = np.mean(
+            [score(y_true, pred)
+             for pred in df[f"objective_{ref.stem}_pred"]])
+    metrics = df.select_dtypes("number").filter(regex="^objective_")
+    for col, value in metrics.mean().items():
+        scores[col.removeprefix("objective_")] = value
+    if not scores or np.isnan(list(scores.values())).any():
+        raise SystemExit(f"[scoring] missing or NaN scores: {list(scores)}")
 
-        predictions = pd.read_csv(
-            prediction_dir / f'{eval_set}_predictions.csv'
-        )
-        targets = pd.read_csv(
-            reference_dir / f'{eval_set}_labels.csv'
-        )
+    # benchopt times the solver's run (training), ingestion the whole run.
+    scores["train_time"] = df["time"].mean()
+    scores["duration"] = json.loads(
+        (prediction_dir / "metadata.json").read_text())["duration"]
 
-        scores[eval_set] = float(compute_accuracy(predictions, targets))
-
-    # Add train and test times in the score
-    json_durations = (prediction_dir / 'metadata.json').read_text()
-    durations = json.loads(json_durations)
-    scores.update(**durations)
-    print(scores)
-
-    # Write output scores
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / 'scores.json').write_text(json.dumps(scores))
+    (output_dir / "scores.json").write_text(
+        json.dumps({k: float(v) for k, v in scores.items()}))
+    # Keys only: the log is shown to the submitter, values include hidden
+    # private metrics.
+    print(f"[scoring] wrote {', '.join(scores)} to scores.json")
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Scoring program for codabench"
-    )
-    parser.add_argument(
-        "--reference-dir",
-        type=str,
-        default="/app/input/ref",
-        help="",
-    )
-    parser.add_argument(
-        "--prediction-dir",
-        type=str,
-        default="/app/input/res",
-        help="",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="/app/output",
-        help="",
-    )
-
+    parser = argparse.ArgumentParser(description="Competition scoring")
+    parser.add_argument("--prediction-dir", default="/app/input/res")
+    parser.add_argument("--reference-dir", default="/app/input/ref")
+    parser.add_argument("--output-dir", default="/app/output")
     args = parser.parse_args()
 
-    main(
-        Path(args.reference_dir),
-        Path(args.prediction_dir),
-        Path(args.output_dir)
-    )
+    main(Path(args.prediction_dir), Path(args.reference_dir),
+         Path(args.output_dir))
