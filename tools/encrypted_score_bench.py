@@ -26,18 +26,23 @@ Three routes, from the cheapest to the most costly:
   evaluator computes from the prediction.
 
 The script prints, for each score, its error on all values (exact numpy),
-then the single-core cost on one ciphertext and the HE error. For R2 and the
-capped NLL, it then audits the honest output and three forgeries.
+then the single-core cost on one ciphertext and the HE error. When HEonGPU
+finds a GPU, it runs the same circuits there too, with the same ring, depth
+and modulus sizes. For R2 and the capped NLL, it then audits the honest
+output and three forgeries (on the CPU only).
 
-Requirements: ``pip install openfhe numpy scipy``. The openfhe wheel needs
-Python 3.12 and glibc 2.39 (Ubuntu 24.04). Labels are a 1D array. With 1D
-predictions, it benchmarks R2 and MAE. With (n, 2) predictions of NB counts
-(mean, dispersion), as in the virtual bacteria challenge, it adds the NLL and
-computes R2 and MAE on log1p. Without arguments, it uses synthetic NB data::
+Requirements: ``pip install openfhe numpy scipy``, and ``heongpu`` for the
+GPU (its wheels need a Turing or newer GPU and a 580+ driver). The openfhe
+wheel needs Python 3.12 and glibc 2.39 (Ubuntu 24.04). Labels are a 1D
+array. With 1D predictions, it benchmarks R2 and MAE. With (n, 2)
+predictions of NB counts (mean, dispersion), as in the virtual bacteria
+challenge, it adds the NLL and computes R2 and MAE on log1p. Without
+arguments, it uses synthetic NB data::
 
     OMP_NUM_THREADS=1 python tools/encrypted_score_bench.py [y.npy p.npy]
 """
 import argparse
+import operator
 import os
 import tempfile
 import time
@@ -45,6 +50,12 @@ import time
 import numpy as np
 import openfhe as o
 from scipy.special import gammaln
+
+try:  # optional GPU backend, used when a GPU is visible
+    from heongpu import ckks
+    ckks.Session(ckks.Params(multiplicative_depth=1))
+except (ImportError, RuntimeError):
+    ckks = None
 
 MAE_BITS = (12, 16, 20)
 NLL_CAP = 100.0
@@ -57,8 +68,50 @@ SNAP = 2.0 ** -20  # public grid of the scored predictions
 MC_DRAWS = 1000
 
 
-class HE:
-    """CKKS context and keys at 128-bit security."""
+class Backend:
+    """What the circuits share across CKKS libraries."""
+
+    def sync(self):
+        pass
+
+    def timed(self, fn, *args, reps=3):
+        """Median wall time of fn(*args), and its output."""
+        times = []
+        for _ in range(reps):
+            start = time.perf_counter()
+            out = fn(*args)
+            self.sync()
+            times.append(time.perf_counter() - start)
+        return float(np.median(times)), out
+
+    def lt(self, ct_bits, q):
+        """Enc([x < q]) per slot, from Enc(bits of x) and clear integers q."""
+        cc = self.cc
+        theta = bits_of(q, len(ct_bits))
+        # Per bit: lt = t (1 - b) and eq = [b == t], linear in b.
+        lt = [cc.EvalAdd(cc.EvalMult(b, self.pt(-t)), self.pt(t))
+              for b, t in zip(ct_bits, theta)]
+        eq = [cc.EvalAdd(cc.EvalMult(b, self.pt(2 * t - 1)), self.pt(1 - t))
+              for b, t in zip(ct_bits, theta)]
+        # Merge (high, low) blocks: lt = lt_hi + eq_hi lt_lo, eq = eq_hi eq_lo.
+        while len(lt) > 1:
+            merged_lt, merged_eq = [], []
+            for i in range(0, len(lt) - 1, 2):
+                merged_lt.append(
+                    cc.EvalAdd(lt[i], cc.EvalMult(eq[i], lt[i + 1])))
+                merged_eq.append(cc.EvalMult(eq[i], eq[i + 1])
+                                 if len(lt) > 2 else None)
+            if len(lt) % 2:
+                merged_lt.append(lt[-1])
+                merged_eq.append(eq[-1])
+            lt, eq = merged_lt, merged_eq
+        return lt[0]
+
+
+class HE(Backend):
+    """OpenFHE CKKS context and keys at 128-bit security."""
+
+    name = "CPU"
 
     def __init__(self, depth):
         params = o.CCParamsCKKSRNS()
@@ -92,28 +145,54 @@ class HE:
             o.SerializeToFile(path, ct, o.BINARY)
             return os.path.getsize(path)
 
-    def lt(self, ct_bits, q):
-        """Enc([x < q]) per slot, from Enc(bits of x) and clear integers q."""
-        cc = self.cc
-        theta = bits_of(q, len(ct_bits))
-        # Per bit: lt = t (1 - b) and eq = [b == t], linear in b.
-        lt = [cc.EvalAdd(cc.EvalMult(b, self.pt(-t)), self.pt(t))
-              for b, t in zip(ct_bits, theta)]
-        eq = [cc.EvalAdd(cc.EvalMult(b, self.pt(2 * t - 1)), self.pt(1 - t))
-              for b, t in zip(ct_bits, theta)]
-        # Merge (high, low) blocks: lt = lt_hi + eq_hi lt_lo, eq = eq_hi eq_lo.
-        while len(lt) > 1:
-            merged_lt, merged_eq = [], []
-            for i in range(0, len(lt) - 1, 2):
-                merged_lt.append(
-                    cc.EvalAdd(lt[i], cc.EvalMult(eq[i], lt[i + 1])))
-                merged_eq.append(cc.EvalMult(eq[i], eq[i + 1])
-                                 if len(lt) > 2 else None)
-            if len(lt) % 2:
-                merged_lt.append(lt[-1])
-                merged_eq.append(eq[-1])
-            lt, eq = merged_lt, merged_eq
-        return lt[0]
+
+class GPUOps:
+    """OpenFHE's evaluation calls, on HEonGPU ciphertexts."""
+
+    EvalAdd = staticmethod(operator.add)
+    EvalSub = staticmethod(operator.sub)
+    EvalMult = staticmethod(operator.mul)
+    EvalNegate = staticmethod(operator.neg)
+
+
+class GPU(Backend):
+    """HEonGPU session with the ring, depth and modulus sizes of OpenFHE.
+
+    Products are relinearized and rescaled, and operands brought to the same
+    level, automatically, as in OpenFHE.
+    """
+
+    name = "GPU"
+    cc = GPUOps
+
+    def __init__(self, depth, ring_dim):
+        self.session = ckks.Session(ckks.Params(
+            multiplicative_depth=depth, scale_bit_size=50,
+            first_modulus_bit_size=60, poly_modulus_degree=ring_dim))
+        self.slots = self.session.slot_count
+
+    def pt(self, x):
+        return np.asarray(x, float)
+
+    def encrypt(self, *arrays):
+        return [self.session.encrypt(self.pt(x)) for x in arrays]
+
+    def decrypt(self, ct, n):
+        return np.asarray(self.session.decrypt(ct))[:n]
+
+    def size(self, ct):
+        return len(ct.to_bytes())
+
+    def sync(self):
+        self.session.synchronize()
+
+
+def backends(depth):
+    """OpenFHE on the CPU, then HEonGPU with the same ring when available."""
+    he = HE(depth)
+    yield he
+    if ckks is not None:
+        yield GPU(depth, 2 * he.slots)
 
 
 def bits_of(q, n_bits):
@@ -183,22 +262,12 @@ def nll_approx(y, b, a, mu, r, lo, hi):
     return np.where((lo <= y) & (y <= hi), nll, NLL_CAP)
 
 
-def timed(fn, *args, reps=3):
-    """Median wall time of fn(*args), and its output."""
-    times = []
-    for _ in range(reps):
-        start = time.perf_counter()
-        out = fn(*args)
-        times.append(time.perf_counter() - start)
-    return float(np.median(times)), out
-
-
 def report(name, he, n, t_enc, t_eval, cts, got, want):
     per_value = 1e6 / n
     kb = len(cts) * he.size(cts[0]) / he.slots / 1e3
-    print(f"  {name}, N={2 * he.slots}: eval {t_eval * per_value:.1f} "
-          f"us/value, encrypt {t_enc * per_value:.1f} us/value, labels "
-          f"{kb:.2f} KB/value "
+    print(f"  {name}, {he.name}, N={2 * he.slots}: eval "
+          f"{t_eval * per_value:.1f} us/value, encrypt "
+          f"{t_enc * per_value:.1f} us/value, labels {kb:.2f} KB/value "
           f"({len(cts)} ct), HE error on the score "
           f"{abs(got - want) / abs(want):.1e}", flush=True)
 
@@ -247,15 +316,15 @@ def bench_r2(y, p):
     p, y = (p - y.mean()) / y.std(), (y - y.mean()) / y.std()
     exact = 1 - ((p - y) ** 2).sum() / ((y - y.mean()) ** 2).sum()
     print(f"R2 {exact:.6g}, linear route: exact up to HE noise")
-    he = HE(depth=1)
-    ys, ps = y[:he.slots], p[:he.slots]
-    t_enc, cts = timed(he.encrypt, ys, reps=1)
-    t_eval, ct = timed(r2_eval, he, cts[0], ps)
-    # The key holder adds sum(y^2) and divides by the SST.
-    sst = ((ys - ys.mean()) ** 2).sum()
-    got = 1 - (he.decrypt(ct, len(ys)).sum() + (ys ** 2).sum()) / sst
-    want = 1 - ((ps - ys) ** 2).sum() / sst
-    report("linear", he, len(ys), t_enc, t_eval, cts, got, want)
+    for he in backends(depth=1):
+        ys, ps = y[:he.slots], p[:he.slots]
+        t_enc, cts = he.timed(he.encrypt, ys, reps=1)
+        t_eval, ct = he.timed(r2_eval, he, cts[0], ps)
+        # The key holder adds sum(y^2) and divides by the SST.
+        sst = ((ys - ys.mean()) ** 2).sum()
+        got = 1 - (he.decrypt(ct, len(ys)).sum() + (ys ** 2).sum()) / sst
+        want = 1 - ((ps - ys) ** 2).sum() / sst
+        report("linear", he, len(ys), t_enc, t_eval, cts, got, want)
 
 
 def bench_nll(y, mu, r):
@@ -285,25 +354,26 @@ def bench_nll(y, mu, r):
           f"{exact_nll.max():.3g}")
 
     # Depth 2 leaves room for the large intermediate terms a_k b_k.
-    he = HE(depth=2)
-    sl = slice(0, he.slots)
-    t_enc, cts = timed(he.encrypt, y[sl], gammaln(y[sl] + 1), *b[sl].T,
-                       reps=1)
-    t_eval, ct = timed(nll_uncapped_eval, he, cts[0], cts[1], cts[2:], a[sl],
-                       mu[sl], r[sl])
-    n = len(y[sl])
-    report("low rank, uncapped", he, n, t_enc, t_eval, cts,
-           he.decrypt(ct, n).mean(), approx_nll[sl].mean())
+    for he in backends(depth=2):
+        sl = slice(0, he.slots)
+        t_enc, cts = he.timed(he.encrypt, y[sl], gammaln(y[sl] + 1),
+                              *b[sl].T, reps=1)
+        t_eval, ct = he.timed(nll_uncapped_eval, he, cts[0], cts[1], cts[2:],
+                              a[sl], mu[sl], r[sl])
+        n = len(y[sl])
+        report("low rank, uncapped", he, n, t_enc, t_eval, cts,
+               he.decrypt(ct, n).mean(), approx_nll[sl].mean())
 
-    he = HE(depth=int(np.ceil(np.log2(n_bits))) + 3)
-    sl = slice(0, he.slots)
-    t_enc, cts = timed(he.encrypt, *bits_of(y[sl], n_bits),
-                       gammaln(y[sl] + 1), *b[sl].T, reps=1)
-    t_eval, ct = timed(nll_eval, he, cts[:n_bits], cts[n_bits],
-                       cts[n_bits + 1:], a[sl], mu[sl], r[sl], lo[sl], hi[sl])
-    n = len(y[sl])
-    report("low rank and cap", he, n, t_enc, t_eval, cts,
-           he.decrypt(ct, n).mean(), approx[sl].mean())
+    for he in backends(depth=int(np.ceil(np.log2(n_bits))) + 3):
+        sl = slice(0, he.slots)
+        t_enc, cts = he.timed(he.encrypt, *bits_of(y[sl], n_bits),
+                              gammaln(y[sl] + 1), *b[sl].T, reps=1)
+        t_eval, ct = he.timed(nll_eval, he, cts[:n_bits], cts[n_bits],
+                              cts[n_bits + 1:], a[sl], mu[sl], r[sl], lo[sl],
+                              hi[sl])
+        n = len(y[sl])
+        report("low rank and cap", he, n, t_enc, t_eval, cts,
+               he.decrypt(ct, n).mean(), approx[sl].mean())
 
 
 def bench_mae(y, p):
@@ -316,15 +386,16 @@ def bench_mae(y, p):
     for n_bits in MAE_BITS:
         sign = 2 * (quantize(u, n_bits) < quantize(v, n_bits)) - 1
         approx = sign * (v - u)
-        he = HE(depth=int(np.ceil(np.log2(n_bits))) + 3)
-        us, vs = u[:he.slots], v[:he.slots]
-        t_enc, cts = timed(he.encrypt, us,
-                           *bits_of(quantize(us, n_bits), n_bits), reps=1)
-        t_eval, ct = timed(mae_eval, he, cts[0], cts[1:], vs)
         err = abs(approx.mean() - exact) / exact
         print(f"  L={n_bits}: relative error {err:.1e}")
-        report(f"L={n_bits}", he, len(us), t_enc, t_eval, cts,
-               he.decrypt(ct, len(us)).mean(), approx[:he.slots].mean())
+        for he in backends(depth=int(np.ceil(np.log2(n_bits))) + 3):
+            us, vs = u[:he.slots], v[:he.slots]
+            t_enc, cts = he.timed(he.encrypt, us,
+                                  *bits_of(quantize(us, n_bits), n_bits),
+                                  reps=1)
+            t_eval, ct = he.timed(mae_eval, he, cts[0], cts[1:], vs)
+            report(f"L={n_bits}", he, len(us), t_enc, t_eval, cts,
+                   he.decrypt(ct, len(us)).mean(), approx[:he.slots].mean())
 
 
 def log_comb(n, k):
@@ -427,7 +498,7 @@ def audit_r2(y, p, rng):
     ct_y, = he.encrypt(ys)
     audit = Audit(he, n, rng)
     ct_loss = r2_eval(he, ct_y, ps)
-    t_audit, cts_open = timed(audit_eval, he, audit.ct, ps)
+    t_audit, cts_open = he.timed(audit_eval, he, audit.ct, ps)
     q = audit.open(he, cts_open[0])
     audit_check("R2", he, audit, ct_loss, ys ** 2, (q - ys[audit.idx]) ** 2,
                 (ps - ys) ** 2, (0, np.inf), 1e-8, rng, t_audit, cts_open)
@@ -449,7 +520,7 @@ def audit_nll(y, mu, r, rng):
     a, lo, hi = nll_clear(mu, r, grid_y, u, n_bits)
     ct_loss = nll_eval(he, cts[:n_bits], cts[n_bits], cts[n_bits + 1:], a,
                        mu, r, lo, hi)
-    t_audit, cts_open = timed(audit_eval, he, audit.ct, log_mu, log_r)
+    t_audit, cts_open = he.timed(audit_eval, he, audit.ct, log_mu, log_r)
 
     # Key holder: the same clear pipeline on the opened predictions.
     q_mu, q_r = (np.exp(audit.open(he, ct)) for ct in cts_open)

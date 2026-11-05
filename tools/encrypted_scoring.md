@@ -66,6 +66,41 @@ route, 20 s for the uncapped NLL, 3.5 to 7 min for the MAE, and 13 min for
 the capped NLL. The ciphertexts are independent, so the time divides by the
 number of cores.
 
+## On a GPU
+
+The benchmark runs the same circuits with HEonGPU when it finds a GPU, with
+the ring, the depth and the modulus sizes of the OpenFHE context. Each GPU
+is compared with one core of the CPU of its own node, on one ciphertext.
+
+| Score | A40 (us/value) | EPYC 7413 core | Speedup | RTX 2080 Ti (us/value) | Xeon Silver 4108 core | Speedup |
+| --- | --- | --- | --- | --- | --- | --- |
+| R2 | < 0.05 | 0.9 | > 20 | < 0.05 | 1.5 | > 30 |
+| NB NLL, rank 16 | 0.3 | 12 | 40 | 0.6 | 21 | 35 |
+| NB NLL capped at 100 | 4.2 | 434 | 103 | 5.2 | 720 | 138 |
+| MAE, L = 12 | 1.1 | 123 | 112 | 1.4 | 220 | 157 |
+| MAE, L = 16 | 1.5 | 165 | 110 | 1.9 | 269 | 141 |
+| MAE, L = 20 | 2.2 | 228 | 104 | 2.8 | 374 | 134 |
+
+Encryption speeds up as much, to 0.5 to 1.5 us/value. The HE errors are the
+same as with OpenFHE. The serialized ciphertexts of HEonGPU are 10 to 40%
+smaller, because its format differs, not its parameters.
+
+One ciphertext keeps the GPU busy. On the A40, the MAE with L = 12 in a loop
+for 10 s keeps it 94 to 97% busy, and runs at 1.07 us/value, as in the
+benchmark. Four CUDA streams from four threads give 1.16 us/value, so the
+GPU is the limit, not the Python calls. A T4, as on the Codabench workers of
+the datacamp, has about half the memory bandwidth of an RTX 2080 Ti, so
+expect about twice its times.
+
+With a GPU, reading the encrypted labels from disk costs more than the
+circuit. The MAE with L = 12 takes 3.3 KB/value. At 1 GB/s, reading them
+takes 3.3 us/value, against 1.4 us/value to compute. The size of the labels
+is then the limit: the GPU removes the compute cost, not the storage.
+
+The audit only runs on OpenFHE, which keeps the audit key apart from the
+evaluation keys. On the evaluator's side, it costs one product by a
+plaintext per opened prediction, which the GPU speeds up like the rest.
+
 ## Bounding a loss without a cap
 
 The cap makes the NLL 35 times slower, because it needs two comparisons.
