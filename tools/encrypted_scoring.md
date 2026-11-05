@@ -14,10 +14,9 @@ CKKS ciphertexts (OpenFHE, 128-bit security). Each one packs N/2 values, and
 the evaluator works on all of them at once.
 
 This hides the labels from the submission, which can read everything the
-evaluator reads. It does not protect the score itself. A submission that
+evaluator reads. It does not protect the score by itself. A submission that
 controls the process can replace the encrypted score by the encryption of any
-number with the public key. Integrity needs another mechanism, for instance
-rerunning the top submissions in a separate container.
+number, or shift some of its values. The audit described below detects this.
 
 ## Three routes
 
@@ -87,6 +86,64 @@ the loss keeps this cheap route:
 On the synthetic data, the largest per-value NLL is 53 nats, so the cap never
 triggers. Whether a cap is needed depends on how bad the worst submissions
 are on the real data.
+
+## Checking the score
+
+Any prediction is a valid submission, so running the circuit on some other
+predictions is not a forgery. A forgery is an output that no prediction
+produces: a fresh encryption, an output shifted on some values, or features
+a_k(p) computed from different p for different k. The audit catches these,
+because the computation is fixed in advance:
+
+- The evaluator returns one loss per value, not their sum. The key holder
+  sums after decryption, and checks that every loss is within its bounds.
+- The organizers draw a secret mask m with random weights alpha on k slots,
+  and encrypt m alpha under a second secret key. The evaluator returns
+  Enc(m alpha) times its clear predictions. The key holder decrypts it,
+  divides by alpha and gets the predictions at the k audited slots.
+- The key holder recomputes the loss at these slots, with the same clear
+  code as the evaluator, and compares it with the decrypted loss.
+- The predictions are rounded to a public grid (2^-20, in log for positive
+  quantities) before scoring. The opened prediction then rounds back to the
+  exact value the evaluator used, despite the CKKS noise.
+
+No evaluation key involves the audit key, and OpenFHE refuses to add or
+multiply ciphertexts under different keys. Forcing it gives a ciphertext that
+fails to decrypt. So the evaluator can only multiply the mask by plaintexts,
+even on the comparison route where it holds a relinearization key. It cannot
+compute (1 - m) times a shift, which it would need to fake only the slots
+that are not audited. To pass the check at an audited slot, it needs the
+loss of the opened prediction there, which depends on the label. So the
+values it fakes do not depend on the mask. With f faked values out of n, the
+audit misses them with the hypergeometric probability C(n - f, k) / C(n, k),
+close to (1 - f/n)^k. With k = 1400, it catches 1% of faked values with
+probability 1 - 1e-6. The check runs offline with a secret mask, so the
+submission gets a single try.
+
+A faked value moves the score by at most the width of the loss bounds, so a
+bounded loss also bounds what a forgery can gain. A shift smaller than the
+tolerance is not detected, but the tolerance is set by the CKKS noise, so it
+is negligible.
+
+The numbers come from `tools/encrypted_score_bench.py`, on one ciphertext of
+synthetic data, with k = 1400. The forger claims half of its mean loss on the
+values it fakes.
+
+| Score | Values | Honest HE error per value | Tolerance | Fresh encryption | 1% faked | 0.1% faked |
+| --- | --- | --- | --- | --- | --- | --- |
+| R2 | 8192 | 5e-11 | 1e-8 | caught | caught | caught by 75% of masks (theory 73%) |
+| NB NLL capped at 100 | 16384 | 3e-4 nats | 1e-3 nats | caught | caught | caught by 86% of masks (theory 83%) |
+
+The honest outputs pass. The fresh encryptions pass the range check but fail
+the audit. The audit adds 1.1 us/value to the evaluator on the R2 route and
+6.2 us/value on the NLL route, for two opened predictions. The key holder's
+check takes 5 to 15 us/value. The audit outputs can be summed over the
+ciphertexts if each slot position is audited in at most one ciphertext, so
+they take one ciphertext per opened prediction. The losses themselves are
+not summed, so the output is about as large as one encrypted label feature.
+
+The audit does not prove that the submission's model made the predictions.
+It only shows that the score is the loss of the predictions it opens.
 
 ## Which route for which metric
 

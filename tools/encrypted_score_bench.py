@@ -4,9 +4,11 @@ Use case: the score is computed in the same process as the submission, and
 the hidden labels must not be readable there. The organizers encrypt label
 features offline (CKKS, OpenFHE), the evaluator computes the score on
 ciphertexts from clear predictions, and only the secret key holder decrypts
-it. This hides the labels but does not prevent score forging: anyone can
-encrypt a fake score. See ``tools/encrypted_scoring.md`` for which metrics
-fit which route, and measured costs.
+it. This hides the labels. Against a forged score, the output stays one
+loss per value, and a secret audit mask under its own key opens the
+predictions at a few slots, where the key holder recomputes the loss. See
+``tools/encrypted_scoring.md`` for which metrics fit which route, the audit,
+and measured costs.
 
 Three routes, from the cheapest to the most costly:
 
@@ -24,7 +26,8 @@ Three routes, from the cheapest to the most costly:
   evaluator computes from the prediction.
 
 The script prints, for each score, its error on all values (exact numpy),
-then the single-core cost on one ciphertext and the HE error.
+then the single-core cost on one ciphertext and the HE error. For R2 and the
+capped NLL, it then audits the honest output and three forgeries.
 
 Requirements: ``pip install openfhe numpy scipy``. The openfhe wheel needs
 Python 3.12 and glibc 2.39 (Ubuntu 24.04). Labels are a 1D array. With 1D
@@ -49,6 +52,9 @@ R_RANGE = (1e-2, 1e3)  # public clip of the NB dispersion
 RANK = 16
 EPS = 1e-8
 CHUNK = 4096
+AUDIT_SLOTS = 1400  # catches 1% of faked values with probability 1 - 1e-6
+SNAP = 2.0 ** -20  # public grid of the scored predictions
+MC_DRAWS = 1000
 
 
 class HE:
@@ -143,6 +149,40 @@ def first_y(lo, hi, mu, r, above):
     return lo
 
 
+def nll_basis(y):
+    """Public grids and the rank-RANK SVD of g on them."""
+    grid_y = np.unique(np.r_[np.arange(64.0),
+                             np.geomspace(64, max(y.max(), 64), 512).round()])
+    grid_r = np.geomspace(*R_RANGE, 512)
+    u, s, vt = np.linalg.svd(g_exact(grid_y[:, None], grid_r[None]),
+                             full_matrices=False)
+    return grid_y, grid_r, u[:, :RANK], s[:RANK], vt[:RANK]
+
+
+def nll_label_features(y, grid_r, s, vt):
+    """Organizers: the b_k(y), from the Nystrom extension on grid_r."""
+    return np.concatenate([g_exact(y[i:i + CHUNK, None], grid_r[None])
+                           @ vt.T / s for i in range(0, len(y), CHUNK)])
+
+
+def nll_clear(mu, r, grid_y, u, n_bits):
+    """Evaluator, in the clear: the a_k(r) and the cap interval [lo, hi]."""
+    a = np.concatenate([g_exact(grid_y[None], r[i:i + CHUNK, None]) @ u
+                        for i in range(0, len(r), CHUNK)])
+    n_max = 2.0 ** n_bits - 2
+    mode = np.minimum(np.where(r > 1, np.floor(mu * (r - 1) / r), 0), n_max)
+    lo = first_y(np.zeros_like(mu), mode + 1, mu, r, above=False)
+    hi = first_y(mode, np.full_like(mu, n_max + 1), mu, r, above=True) - 1
+    return a, lo, hi
+
+
+def nll_approx(y, b, a, mu, r, lo, hi):
+    """Capped NLL per value, as the circuit computes it."""
+    nll = (gammaln(y + 1) - (a * b).sum(1) + y * np.log1p(r / mu)
+           + r * np.log1p(mu / r))
+    return np.where((lo <= y) & (y <= hi), nll, NLL_CAP)
+
+
 def timed(fn, *args, reps=3):
     """Median wall time of fn(*args), and its output."""
     times = []
@@ -224,30 +264,16 @@ def bench_nll(y, mu, r):
     exact_nll = nb_nll(y, mu, r)
     exact = np.minimum(exact_nll, NLL_CAP).mean()
 
-    # Public grids and their SVD, then label features (organizers).
-    grid_y = np.unique(np.r_[np.arange(64.0),
-                             np.geomspace(64, max(y.max(), 64), 512).round()])
-    grid_r = np.geomspace(*R_RANGE, 512)
-    u, s, vt = np.linalg.svd(g_exact(grid_y[:, None], grid_r[None]),
-                             full_matrices=False)
-    u, s, vt = u[:, :RANK], s[:RANK], vt[:RANK]
-    b = np.concatenate([g_exact(y[i:i + CHUNK, None], grid_r[None]) @ vt.T / s
-                        for i in range(0, len(y), CHUNK)])
-
-    # Prediction features and cap interval (evaluator, in the clear).
+    grid_y, grid_r, u, s, vt = nll_basis(y)
+    b = nll_label_features(y, grid_r, s, vt)
     start = time.perf_counter()
-    a = np.concatenate([g_exact(grid_y[None], r[i:i + CHUNK, None]) @ u
-                        for i in range(0, len(y), CHUNK)])
-    n_max = 2.0 ** n_bits - 2
-    mode = np.minimum(np.where(r > 1, np.floor(mu * (r - 1) / r), 0), n_max)
-    lo = first_y(np.zeros_like(y), mode + 1, mu, r, above=False)
-    hi = first_y(mode, np.full_like(y, n_max + 1), mu, r, above=True) - 1
+    a, lo, hi = nll_clear(mu, r, grid_y, u, n_bits)
     t_clear = time.perf_counter() - start
 
     g = (a * b).sum(1)
     approx_nll = exact_nll + g_exact(y, r) - g
     inside = (lo <= y) & (y <= hi)
-    approx = np.where(inside, approx_nll, NLL_CAP)
+    approx = nll_approx(y, b, a, mu, r, lo, hi)
     print(f"NB NLL capped at {NLL_CAP:g}: {exact:.6g}, rank {RANK} and cap "
           f"circuit (L={n_bits}): relative error "
           f"{abs(approx.mean() - exact) / exact:.1e}, uncapped "
@@ -301,13 +327,149 @@ def bench_mae(y, p):
                he.decrypt(ct, len(us)).mean(), approx[:he.slots].mean())
 
 
+def log_comb(n, k):
+    return gammaln(n + 1) - gammaln(k + 1) - gammaln(n - k + 1)
+
+
+def snap(x):
+    """Round to the public grid, so that a noisy opening rounds back."""
+    return np.round(x / SNAP) * SNAP
+
+
+class Audit:
+    """Secret audit mask, under its own key: no evaluation key involves it.
+
+    The evaluator can only multiply it by plaintexts. It cannot combine it
+    with the score ciphertexts, so the slots it fakes do not depend on it.
+    """
+
+    def __init__(self, he, n, rng):
+        self.keys = he.cc.KeyGen()
+        self.idx = rng.choice(n, AUDIT_SLOTS, replace=False)
+        self.alpha = rng.uniform(1, 2, AUDIT_SLOTS)
+        mask = np.zeros(n)
+        mask[self.idx] = self.alpha
+        self.ct = he.cc.Encrypt(self.keys.publicKey, he.pt(mask))
+
+    def open(self, he, ct):
+        """Key holder: the opened prediction at each audited slot."""
+        dec = he.cc.Decrypt(ct, self.keys.secretKey)
+        dec.SetLength(self.idx.max() + 1)
+        return snap(np.array(dec.GetRealPackedValue())[self.idx] / self.alpha)
+
+
+def audit_eval(he, ct_mask, *preds):
+    """Evaluator: Enc(m alpha p) for each prediction array p."""
+    return [he.cc.EvalMult(ct_mask, he.pt(p)) for p in preds]
+
+
+def audit_check(name, he, audit, ct_loss, offset, ref, ref_all, bounds, tol,
+                rng, t_audit, cts_open):
+    """Key holder's check on the honest output and on forged ones.
+
+    The loss per value is the decrypted output plus a label-only offset. It
+    must be in bounds everywhere, and match the loss recomputed from the
+    openings, ref, within tol at the audited slots. ref_all is the honest
+    loss at all slots, which only the benchmark knows: it gives the faked
+    slots, to estimate the detection rate over random masks.
+    """
+    cc, n = he.cc, len(offset)
+    print(f"{name}, audit of {AUDIT_SLOTS} values out of {n}")
+    try:
+        cc.EvalMult(ct_loss, audit.ct)
+        print("  cross-key product accepted")
+    except Exception as err:
+        print(f"  cross-key product refused: {str(err).split(': ')[-1]}")
+
+    start = time.perf_counter()
+    loss = he.decrypt(ct_loss, n) + offset
+    err = np.abs(loss - ref_all).max()
+    for ct in cts_open:
+        audit.open(he, ct)
+    t_check = time.perf_counter() - start
+    print(f"  audit eval {t_audit * 1e6 / n:.2f} us/value, output "
+          f"{len(cts_open) * he.size(cts_open[0]) / n / 1e3:.2f} KB/value, "
+          f"check {t_check * 1e6 / n:.2f} us/value, honest HE error "
+          f"{err:.1e} per value at most (tolerance {tol:g})")
+
+    # The forger guesses its mean loss, and claims half of it on faked slots.
+    guess = ref_all.mean()
+    forged = {"honest": ct_loss,
+              "fresh encryption": cc.Encrypt(he.keys.publicKey,
+                                             he.pt(np.full(n, guess / 2)))}
+    for eps in (1e-2, 1e-3):
+        faked = rng.random(n) < eps
+        forged[f"{eps:.1%} of values faked"] = cc.EvalAdd(
+            ct_loss, he.pt(-guess / 2 * faked))
+
+    draws = np.argsort(rng.random((MC_DRAWS, n)), axis=1)[:, :AUDIT_SLOTS]
+    for kind, ct in forged.items():
+        loss = he.decrypt(ct, n) + offset
+        in_bounds = ((bounds[0] - tol <= loss) & (loss <= bounds[1] + tol)
+                     ).all()
+        audit_ok = (np.abs(loss[audit.idx] - ref) <= tol).all()
+        bad = np.abs(loss - ref_all) > tol
+        # P(the mask hits one of the f faked values), hypergeometric.
+        f = bad.sum()
+        miss = np.exp(log_comb(n - f, AUDIT_SLOTS) - log_comb(n, AUDIT_SLOTS))
+        print(f"  {kind}: mean loss {loss.mean():.6g}, faked {f} values, "
+              f"range check {'ok' if in_bounds else 'FAILED'}, audit "
+              f"{'ok' if audit_ok else 'FAILED'}, audit catches "
+              f"{bad[draws].any(axis=1).mean():.1%} of masks (theory "
+              f"{1 - miss:.1%})")
+
+
+def audit_r2(y, p, rng):
+    p, y = (p - y.mean()) / y.std(), (y - y.mean()) / y.std()
+    he = HE(depth=1)
+    n = he.slots
+    ys, ps = y[:n], snap(p[:n])
+    ct_y, = he.encrypt(ys)
+    audit = Audit(he, n, rng)
+    ct_loss = r2_eval(he, ct_y, ps)
+    t_audit, cts_open = timed(audit_eval, he, audit.ct, ps)
+    q = audit.open(he, cts_open[0])
+    audit_check("R2", he, audit, ct_loss, ys ** 2, (q - ys[audit.idx]) ** 2,
+                (ps - ys) ** 2, (0, np.inf), 1e-8, rng, t_audit, cts_open)
+
+
+def audit_nll(y, mu, r, rng):
+    n_bits = int(y.max() + 1).bit_length()
+    grid_y, grid_r, u, s, vt = nll_basis(y)
+    he = HE(depth=int(np.ceil(np.log2(n_bits))) + 3)
+    n = he.slots
+    y = y[:n]
+    b = nll_label_features(y, grid_r, s, vt)
+    cts = he.encrypt(*bits_of(y, n_bits), gammaln(y + 1), *b.T)
+    audit = Audit(he, n, rng)
+
+    # Evaluator: predictions on the grid, in log since they are positive.
+    log_mu, log_r = snap(np.log(mu[:n])), snap(np.log(r[:n]))
+    mu, r = np.exp(log_mu), np.exp(log_r)
+    a, lo, hi = nll_clear(mu, r, grid_y, u, n_bits)
+    ct_loss = nll_eval(he, cts[:n_bits], cts[n_bits], cts[n_bits + 1:], a,
+                       mu, r, lo, hi)
+    t_audit, cts_open = timed(audit_eval, he, audit.ct, log_mu, log_r)
+
+    # Key holder: the same clear pipeline on the opened predictions.
+    q_mu, q_r = (np.exp(audit.open(he, ct)) for ct in cts_open)
+    q_a, q_lo, q_hi = nll_clear(q_mu, q_r, grid_y, u, n_bits)
+    ref = nll_approx(y[audit.idx], b[audit.idx], q_a, q_mu, q_r, q_lo, q_hi)
+    audit_check(f"NB NLL capped at {NLL_CAP:g}", he, audit, ct_loss,
+                np.zeros(n), ref, nll_approx(y, b, a, mu, r, lo, hi),
+                (0, NLL_CAP), 1e-3, rng, t_audit, cts_open)
+
+
 def main(y, p):
     print(f"{len(y)} values")
+    rng = np.random.default_rng(1)
     if p.ndim == 2:
         mu, r = np.clip(p[:, 0], EPS, None), np.clip(p[:, 1], *R_RANGE)
         bench_nll(y, mu, r)
+        audit_nll(y, mu, r, rng)
         y, p = np.log1p(y), np.log1p(mu)
     bench_r2(y, p)
+    audit_r2(y, p, rng)
     bench_mae(y, p)
 
 
