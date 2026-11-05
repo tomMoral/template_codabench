@@ -11,5 +11,5 @@
 ARG BASE=ghcr.io/x-datascience-datacamp/codabench-benchopt
 FROM ${BASE}
 
-COPY requirements.txt /tmp/requirements.txt
+COPY requirements.txt extra-deps.txt /tmp/
 RUN pip install --no-cache-dir -r /tmp/requirements.txt

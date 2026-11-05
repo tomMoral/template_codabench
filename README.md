@@ -101,6 +101,10 @@ In this order, since each step builds on the previous one:
    `requirements.txt`, build and push your image from `tools/Dockerfile`, and
    set `docker_image` in `competition.yaml`. `codabench-benchopt-gpu` is the
    CUDA variant, for a self-hosted GPU worker.
+   Once the challenge runs, add a package to `extra-deps.txt` and build
+   `tools/Dockerfile.extra`: it installs the package on top of the running
+   image without upgrading what is already there, so scored submissions keep
+   their stack.
 6. **Pages, dates and quotas** in `pages/` and `competition.yaml`. The
     Participate page summarizes the notebook.
 

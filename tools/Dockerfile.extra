@@ -1,0 +1,14 @@
+# Adds extra-deps.txt to the running image without a full rebuild: the
+# installed packages are frozen as constraints, so pip cannot upgrade them and
+# fails instead of moving the stack under scored submissions. Build from the
+# repo root, with IMAGE the running image pinned by digest so rebuilds do not
+# stack on each other, and push under the docker_image tag:
+#
+#     docker build -f tools/Dockerfile.extra -t <dockerhub-user>/<competition>:v1 \
+#         --build-arg IMAGE=<dockerhub-user>/<competition>@sha256:<digest> .
+ARG IMAGE
+FROM ${IMAGE}
+
+COPY extra-deps.txt /tmp/extra-deps.txt
+RUN pip list --format=freeze > /tmp/frozen.txt && \
+    pip install --no-cache-dir -r /tmp/extra-deps.txt -c /tmp/frozen.txt

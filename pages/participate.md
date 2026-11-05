@@ -58,6 +58,11 @@ platform **trains your code**, once per fold, then evaluates it. Copy
 `benchmark/solvers/random-forest.py`, a working baseline, to
 `my_submission/submission.py`.
 
+The platform installs nothing at submission time: `submission.py` can only
+import the packages of `requirements.txt`, and a solver's benchopt
+`requirements` are ignored. To use another package, open a pull request on
+the challenge repository that adds it to `extra-deps.txt`.
+
 ## Run it locally, same code as the server
 
 `local_config.yml` sets the dataset, the solvers, the seed and the 5 folds

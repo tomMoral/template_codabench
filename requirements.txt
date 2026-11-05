@@ -6,3 +6,5 @@
 benchopt>=1.10
 pandas
 scikit-learn
+# Dependencies added once the challenge runs (installed on top of its image).
+-r extra-deps.txt
